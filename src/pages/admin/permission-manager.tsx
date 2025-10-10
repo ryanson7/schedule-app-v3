@@ -148,7 +148,7 @@ export default function PermissionManagerPage() {
           menu_icon: menuInfo?.icon,
           is_visible: !currentVisible,
           menu_order: menuInfo?.order || 99,
-          parent_menu: menuInfo?.parent || null, // ✅ 트리 구조 유지
+          parent_menu: menuInfo?.parent || null,
           category: menuInfo?.category
         }, { 
           onConflict: 'user_role,menu_id' 
@@ -157,7 +157,10 @@ export default function PermissionManagerPage() {
       if (error) throw error;
 
       console.log(`[메뉴토글] ${userRole}의 ${menuId} 메뉴: ${!currentVisible ? '표시' : '숨김'}`);
-      dynamicPermissionManager.emitPermissionChange();
+      // 🔥 수정: dynamicPermissionManager → dynamicPermissionSystem
+      if (dynamicPermissionSystem.emitPermissionChange) {
+        dynamicPermissionSystem.emitPermissionChange();
+      }
       await loadData();
 
     } catch (error) {
@@ -167,7 +170,6 @@ export default function PermissionManagerPage() {
     }
   }, [loadData]);
 
-  // 페이지 접근 권한 토글
   const togglePageAccess = useCallback(async (userRole: string, pagePath: string, currentAccess: boolean) => {
     setSaving(true);
     try {
@@ -185,7 +187,10 @@ export default function PermissionManagerPage() {
       if (error) throw error;
 
       console.log(`[페이지권한] ${userRole}의 ${pagePath}: ${!currentAccess ? '허용' : '차단'}`);
-      dynamicPermissionManager.emitPermissionChange();
+      // 🔥 수정: dynamicPermissionManager → dynamicPermissionSystem
+      if (dynamicPermissionSystem.emitPermissionChange) {
+        dynamicPermissionSystem.emitPermissionChange();
+      }
       await loadData();
 
     } catch (error) {
@@ -195,7 +200,6 @@ export default function PermissionManagerPage() {
     }
   }, [loadData]);
 
-  // 새 메뉴 추가
   const handleAddMenu = useCallback(async () => {
     if (!newMenu.id || !newMenu.name) {
       alert('메뉴 ID와 이름을 입력해주세요.');
@@ -212,7 +216,7 @@ export default function PermissionManagerPage() {
         menu_icon: newMenu.icon,
         is_visible: false,
         menu_order: newMenu.order,
-        parent_menu: newMenu.parent || null, // ✅ 부모 메뉴 지원
+        parent_menu: newMenu.parent || null,
         category: newMenu.category
       }));
 
@@ -234,7 +238,10 @@ export default function PermissionManagerPage() {
         order: newMenu.order
       });
 
-      dynamicPermissionManager.emitPermissionChange();
+      // 🔥 수정: dynamicPermissionManager → dynamicPermissionSystem
+      if (dynamicPermissionSystem.emitPermissionChange) {
+        dynamicPermissionSystem.emitPermissionChange();
+      }
       
       setNewMenu({
         id: '',
@@ -255,6 +262,54 @@ export default function PermissionManagerPage() {
       setSaving(false);
     }
   }, [newMenu, loadData]);
+
+  const setDefaultMenusForRole = useCallback(async (userRole: string) => {
+    const roleInfo = ROLES[userRole as keyof typeof ROLES];
+    if (!confirm(`${roleInfo?.name}의 메뉴를 기본값으로 재설정하시겠습니까?`)) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await supabase
+        .from('menu_permissions')
+        .delete()
+        .eq('user_role', userRole);
+
+      const defaultMenus = getDefaultMenusForRole(userRole);
+      
+      const insertData = defaultMenus.map(menu => ({
+        user_role: userRole,
+        menu_id: menu.id,
+        menu_name: menu.name,
+        menu_path: menu.path,
+        menu_icon: menu.icon,
+        is_visible: true,
+        menu_order: menu.order,
+        parent_menu: menu.parent || null,
+        category: menu.category
+      }));
+
+      const { error } = await supabase
+        .from('menu_permissions')
+        .insert(insertData);
+
+      if (error) throw error;
+
+      console.log(`[기본메뉴] ${userRole} 기본 메뉴 설정 완료`);
+      // 🔥 수정: dynamicPermissionManager → dynamicPermissionSystem
+      if (dynamicPermissionSystem.emitPermissionChange) {
+        dynamicPermissionSystem.emitPermissionChange();
+      }
+      await loadData();
+
+    } catch (error) {
+      console.error('[기본메뉴] 오류:', error);
+      alert('기본 메뉴 설정 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }, [loadData]);
 
   // 역할별 기본 메뉴 설정
   const setDefaultMenusForRole = useCallback(async (userRole: string) => {
