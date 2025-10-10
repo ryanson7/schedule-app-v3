@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
-import { dynamicPermissionManager } from '../../utils/dynamicPermissionSystem';
+import * as dynamicPermissionSystem from '../../utils/dynamicPermissionSystem';
 import { ROLES, getRoleInfo } from '../../utils/roleSystem';
 
 interface MenuItem {
