@@ -40,3 +40,6 @@ Thumbs.db
 # Package manager locks (선택사항)
 # package-lock.json
 # yarn.lock
+node_modules
+
+.vercel

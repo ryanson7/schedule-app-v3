@@ -6,7 +6,7 @@
     "dev": "npm run menu:generate && next dev -p 3000",
     "dev:stable": "next dev -p 3000",
     "dev:turbo": "next dev --turbo -p 3000",
-    "build": "npm run menu:generate && next build",
+    "build": "next build",
     "menu:generate": "node scripts/generate-menu.js",
     "start": "NODE_ENV=production next start -p 3000",
     "clean": "rimraf .next node_modules/.cache .eslintcache",
