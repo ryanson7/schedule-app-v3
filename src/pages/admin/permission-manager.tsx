@@ -311,51 +311,51 @@ export default function PermissionManagerPage() {
     }
   }, [loadData]);
 
-  // 역할별 기본 메뉴 설정
-  const setDefaultMenusForRole = useCallback(async (userRole: string) => {
-    const roleInfo = ROLES[userRole as keyof typeof ROLES];
-    if (!confirm(`${roleInfo?.name}의 메뉴를 기본값으로 재설정하시겠습니까?`)) {
-      return;
-    }
+  // // 역할별 기본 메뉴 설정
+  // const setDefaultMenusForRole = useCallback(async (userRole: string) => {
+  //   const roleInfo = ROLES[userRole as keyof typeof ROLES];
+  //   if (!confirm(`${roleInfo?.name}의 메뉴를 기본값으로 재설정하시겠습니까?`)) {
+  //     return;
+  //   }
 
-    setSaving(true);
-    try {
-      await supabase
-        .from('menu_permissions')
-        .delete()
-        .eq('user_role', userRole);
+  //   setSaving(true);
+  //   try {
+  //     await supabase
+  //       .from('menu_permissions')
+  //       .delete()
+  //       .eq('user_role', userRole);
 
-      const defaultMenus = getDefaultMenusForRole(userRole);
+  //     const defaultMenus = getDefaultMenusForRole(userRole);
       
-      const insertData = defaultMenus.map(menu => ({
-        user_role: userRole,
-        menu_id: menu.id,
-        menu_name: menu.name,
-        menu_path: menu.path,
-        menu_icon: menu.icon,
-        is_visible: true,
-        menu_order: menu.order,
-        parent_menu: menu.parent || null, // ✅ 트리 구조 유지
-        category: menu.category
-      }));
+  //     const insertData = defaultMenus.map(menu => ({
+  //       user_role: userRole,
+  //       menu_id: menu.id,
+  //       menu_name: menu.name,
+  //       menu_path: menu.path,
+  //       menu_icon: menu.icon,
+  //       is_visible: true,
+  //       menu_order: menu.order,
+  //       parent_menu: menu.parent || null, // ✅ 트리 구조 유지
+  //       category: menu.category
+  //     }));
 
-      const { error } = await supabase
-        .from('menu_permissions')
-        .insert(insertData);
+  //     const { error } = await supabase
+  //       .from('menu_permissions')
+  //       .insert(insertData);
 
-      if (error) throw error;
+  //     if (error) throw error;
 
-      console.log(`[기본메뉴] ${userRole} 기본 메뉴 설정 완료`);
-      dynamicPermissionManager.emitPermissionChange();
-      await loadData();
+  //     console.log(`[기본메뉴] ${userRole} 기본 메뉴 설정 완료`);
+  //     dynamicPermissionManager.emitPermissionChange();
+  //     await loadData();
 
-    } catch (error) {
-      console.error('[기본메뉴] 오류:', error);
-      alert('기본 메뉴 설정 중 오류가 발생했습니다.');
-    } finally {
-      setSaving(false);
-    }
-  }, [loadData]);
+  //   } catch (error) {
+  //     console.error('[기본메뉴] 오류:', error);
+  //     alert('기본 메뉴 설정 중 오류가 발생했습니다.');
+  //   } finally {
+  //     setSaving(false);
+  //   }
+  // }, [loadData]);
 
   // 역할별 기본 메뉴 정의 (트리 구조 포함)
   const getDefaultMenusForRole = (userRole: string) => {
