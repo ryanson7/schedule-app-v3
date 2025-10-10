@@ -82,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       success: true,
       message: `${userData.name}의 비밀번호가 성공적으로 재설정되었습니다.`,
       tempPassword: finalPassword,
-      user: {rk
+      user: {
         id: userData.id,
         name: userData.name,
         email: userData.email
