@@ -1,0 +1,2 @@
+// QR ê´€???€??
+export interface QRCode {} 

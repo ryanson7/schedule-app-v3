@@ -1,0 +1,2 @@
+// ?•ì‚° ê´€???€??
+export interface Settlement {} 

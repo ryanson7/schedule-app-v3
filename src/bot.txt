@@ -1,0 +1,78 @@
+import axios from 'axios';
+
+const url = 'https://closeapi.eduwill.net/bot/3453943/channel/c534b478-b7d2-f558-cf25-8b8d715ca38f/message';
+
+const payload = {
+  text: 'test'
+};
+
+axios.post(url, payload)
+  .then(res => {
+    console.log('성공:', res.data);
+  })
+  .catch(err => {
+    console.error('에러:', err);
+  });
+
+
+
+  -----------------------------------------------------------------
+
+  fetch('https://closeapi.eduwill.net/bot/3453943/channel/c534b478-b7d2-f558-cf25-8b8d715ca38f/message', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ text: 'test' })
+})
+  .then(res => res.json())
+  .then(data => console.log('성공:', data))
+  .catch(err => console.error('에러:', err));
+----------------------------------------------------------------------------------
+
+  // src/pages/api/message.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  // CORS 헤더 설정
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  // OPTIONS 요청 처리 (CORS preflight)
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  // POST 요청 처리
+  if (req.method === 'POST') {
+    try {
+      const body = req.body;
+
+      // 외부 API 호출
+      const response = await fetch(
+        'https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body)
+        }
+      );
+
+      const data = await response.json();
+      res.status(200).json(data);
+
+    } catch (error) {
+      console.error('API 호출 오류:', error);
+      res.status(500).json({ error: 'Failed to send message' });
+    }
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+}

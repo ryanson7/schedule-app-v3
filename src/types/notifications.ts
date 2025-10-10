@@ -1,0 +1,2 @@
+// ?Œë¦¼ ê´€???€??
+export interface Notification {} 
