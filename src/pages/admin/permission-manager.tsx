@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
 import * as dynamicPermissionSystem from '../../utils/dynamicPermissionSystem';
 import { ROLES, getRoleInfo } from '../../utils/roleSystem';
+import { logger } from '../../utils/logger';
 
 interface MenuItem {
   id: string;
@@ -116,7 +117,7 @@ export default function PermissionManagerPage() {
       if (pageError) throw pageError;
       setPagePermissions(pageData || []);
 
-      console.log('[권한관리] 데이터 로드 완료:', {
+      logger.permission.info('데이터 로드 완료', {
         menus: menuData?.length || 0,
         pages: pageData?.length || 0
       });
