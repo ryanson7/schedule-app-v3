@@ -560,8 +560,8 @@ const sendScheduleNotification = async (
     });
     
     const scheduleUrl = scheduleId 
-      ? `https://yourapp.com/academy-schedules?schedule_id=${scheduleId}&modal=true`
-      : `https://yourapp.com/academy-schedules`;
+      ? `https://schedule-app-v3-kappa.vercel.app/academy-schedules?schedule_id=${scheduleId}&modal=true`
+      : `https://schedule-app-v3-kappa.vercel.app/academy-schedules`;
 
     switch (action) {
       // 🔥 승인 요청
@@ -662,7 +662,7 @@ const sendScheduleNotification = async (
           '',
           '학원 스케줄이 삭제 처리되었습니다.',
           '',
-          `📋 스케줄 목록 보기: https://yourapp.com/academy-schedules`
+          `📋 스케줄 목록 보기: https://schedule-app-v3-kappa.vercel.app/academy-schedules`
         ].join('\\n');
         break;
 

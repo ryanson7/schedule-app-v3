@@ -1,3 +1,4 @@
+//src/components/StudioAdminPanel.tsx
 "use client";
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "../utils/supabaseClient";
@@ -231,15 +232,17 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
 
       if (error) throw error;
 
-      const filteredSchedules = (data || []).filter(schedule => {
-        return schedule.deletion_reason !== 'split_converted';
-      });
+        const filteredSchedules = (data || []).filter(schedule => {
+          // ✅ "분할완료" 상태도 숨김 처리
+          return schedule.approval_status !== 'split_completed' && 
+                schedule.deletion_reason !== 'split_converted';
+        });
 
-      console.log('📊 스케줄 필터링 결과:', {
-        전체: data?.length || 0,
-        표시: filteredSchedules.length,
-        숨김: (data?.length || 0) - filteredSchedules.length
-      });
+        console.log('📊 스케줄 필터링 결과:', {
+          전체: data?.length || 0,
+          표시: filteredSchedules.length,
+          분할완료숨김: (data?.length || 0) - filteredSchedules.length
+        });
 
       const activeSchedules = data?.filter(s => s.approval_status !== 'cancelled') || [];
       const userCancelledSchedules = data?.filter(s => 
@@ -844,6 +847,103 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
     }
   };
 
+  const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], reason: string) => {
+  console.log('🔧 스케줄 분할 요청:', { scheduleId, splitPoints, reason });
+
+  try {
+    // setSaving(true); // 이미 있는 상태 사용
+
+    // 1. 원본 스케줄 조회
+    const { data: originalSchedule, error: fetchError } = await supabase
+      .from('schedules')
+      .select('*')
+      .eq('id', scheduleId)
+      .single();
+
+    if (fetchError || !originalSchedule) {
+      throw new Error('원본 스케줄을 찾을 수 없습니다.');
+    }
+
+    console.log('📋 원본 스케줄:', originalSchedule);
+
+    // 2. 분할 지점으로 세그먼트 생성
+    const timeToMinutes = (timeString: string): number => {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const minutesToTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+
+    const startMinutes = timeToMinutes(originalSchedule.start_time);
+    const endMinutes = timeToMinutes(originalSchedule.end_time);
+    
+    // 분할 지점을 분 단위로 변환
+    const splitMinutes = splitPoints.map(timeToMinutes).sort((a, b) => a - b);
+    
+    // 세그먼트 생성
+    const segments = [];
+    let currentStart = startMinutes;
+
+    // 각 분할 지점까지 세그먼트 생성
+    splitMinutes.forEach((splitPoint) => {
+      if (currentStart < splitPoint) {
+        segments.push({
+          start_time: minutesToTime(currentStart),
+          end_time: minutesToTime(splitPoint)
+        });
+        currentStart = splitPoint;
+      }
+    });
+
+    // 마지막 세그먼트
+    if (currentStart < endMinutes) {
+      segments.push({
+        start_time: minutesToTime(currentStart),
+        end_time: minutesToTime(endMinutes)
+      });
+    }
+
+    if (segments.length < 2) {
+      throw new Error('유효한 분할 구간이 생성되지 않았습니다.');
+    }
+
+    console.log('🔧 생성된 세그먼트:', segments);
+
+    // 3. 트랜잭션으로 분할 실행
+    const { data: insertResult, error: insertError } = await supabase.rpc('split_schedule', {
+      p_original_schedule_id: scheduleId,
+      p_segments: segments,
+      p_reason: reason,
+      p_user_id: parseInt(localStorage.getItem('userId') || '0')
+    });
+
+    if (insertError) {
+      console.error('❌ RPC 오류:', insertError);
+      throw new Error(`분할 처리 중 오류: ${insertError.message}`);
+    }
+
+    console.log('✅ 분할 완료:', insertResult);
+
+    // 4. 스케줄 목록 새로고침
+    await fetchSchedules();
+
+    alert(`스케줄이 성공적으로 ${segments.length}개로 분할되었습니다!`);
+
+  } catch (error) {
+    console.error('❌ 분할 오류:', error);
+    alert(error instanceof Error ? error.message : '분할 처리 중 오류가 발생했습니다.');
+    throw error;
+  } finally {
+    // setSaving(false); // 모달에서 처리됨
+  }
+};
+
+
+
   const refreshWeek = useCallback(() => {
     fetchSchedules();
   }, []);
@@ -1030,6 +1130,7 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
           userRole="admin"
           onSave={handleSave}
           onDelete={handleDeleteSchedule}
+          onSplitSchedule={handleSplitSchedule}
         />
       )}
 

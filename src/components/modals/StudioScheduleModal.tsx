@@ -10,9 +10,493 @@ interface StudioScheduleModalProps {
   initialData?: any;
   locations: any[];
   userRole: string;
-  onSave: (data: any, action: 'temp' | 'request' | 'approve' | 'modify_request' | 'cancel_request'|'cancel_approve') => Promise<{ success: boolean; message: string }>;
+  onSave: (data: any, action: 'temp' | 'request' | 'approve' | 'modify_request' | 'cancel_request'|'cancel_approve' | 'split') => Promise<{ success: boolean; message: string }>;
   onDelete?: (scheduleId: number) => Promise<void>;
+  mode?: 'create' | 'edit' | 'split';
+  onSplitSchedule?: (scheduleId: number, splitPoints: string[], reason: string) => Promise<void>;
 }
+
+// 통일된 스타일 변수
+const UNIFIED_STYLES = {
+  fontSize: '15px',
+  labelSize: '15px',
+  padding: '10px 12px',
+  borderRadius: '6px',
+  gap: '16px',
+  marginBottom: '20px'
+};
+
+// 헬퍼 함수들을 먼저 정의 - hh:mm 표기 개선
+const timeToMinutes = (timeString: string): number => {
+  if (!timeString || typeof timeString !== 'string') return 0;
+  const [hours, minutes] = timeString.split(':').map(Number);
+  return (hours || 0) * 60 + (minutes || 0);
+};
+
+const minutesToTime = (minutes: number): string => {
+  if (typeof minutes !== 'number' || minutes < 0) return '00:00';
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+};
+
+// 30분 단위 시간 옵션 생성 - hh:mm 형식으로 통일
+const generateStudioTimeOptions = () => {
+  const options = [];
+  for (let hour = 9; hour <= 22; hour++) {
+    for (let minute = 0; minute < 60; minute += 30) {
+      const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      options.push(timeString);
+    }
+  }
+  return options;
+};
+
+// 스케줄 분할 컴포넌트
+const ScheduleSplitSection = ({ 
+  schedule, 
+  onSplit, 
+  onCancel 
+}: { 
+  schedule: any; 
+  onSplit: (splitPoints: string[], reason: string) => Promise<void>;
+  onCancel: () => void;
+}) => {
+  // 🔧 기본적으로 구간 2개 노출
+  const [splitRanges, setSplitRanges] = useState<{start: string, end: string}[]>([
+    {start: '', end: ''}, 
+    {start: '', end: ''}  // ✅ 기본 2개 구간
+  ]);
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [previewSegments, setPreviewSegments] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // 통일된 시간 옵션 사용
+  const timeOptions = generateStudioTimeOptions();
+
+  // 유효 범위 필터링
+  const getValidTimeOptions = () => {
+    if (!schedule) return timeOptions;
+    
+    const startMinutes = timeToMinutes(schedule.start_time);
+    const endMinutes = timeToMinutes(schedule.end_time);
+    
+    return timeOptions.filter(time => {
+      const minutes = timeToMinutes(time);
+      return minutes >= startMinutes && minutes <= endMinutes;
+    });
+  };
+
+  const validTimeOptions = getValidTimeOptions();
+
+  useEffect(() => {
+    generatePreview();
+  }, [splitRanges, schedule]);
+
+  const generatePreview = () => {
+    if (!schedule) return;
+    
+    try {
+      setError(null);
+      
+      const validRanges = splitRanges.filter(range => 
+        range.start && range.end && 
+        timeToMinutes(range.start) < timeToMinutes(range.end) &&
+        timeToMinutes(range.start) >= timeToMinutes(schedule.start_time) &&
+        timeToMinutes(range.end) <= timeToMinutes(schedule.end_time)
+      );
+      
+      if (validRanges.length === 0) {
+        setPreviewSegments([]);
+        return;
+      }
+
+      const segments = validRanges.map((range, index) => ({
+        segment: index + 1,
+        start_time: range.start,
+        end_time: range.end,
+        duration: Math.round((timeToMinutes(range.end) - timeToMinutes(range.start)) / 60 * 10) / 10
+      }));
+
+      setPreviewSegments(segments);
+    } catch (err) {
+      console.error('미리보기 생성 오류:', err);
+      setPreviewSegments([]);
+      setError('분할 구간이 올바르지 않습니다.');
+    }
+  };
+
+  const addSplitRange = () => {
+    setSplitRanges(prev => [...prev, {start: '', end: ''}]);
+  };
+
+  const updateSplitRange = (index: number, field: 'start' | 'end', time: string) => {
+    setSplitRanges(prev => prev.map((range, i) => 
+      i === index ? {...range, [field]: time} : range
+    ));
+  };
+
+  const removeSplitRange = (index: number) => {
+    if (splitRanges.length > 1) {
+      setSplitRanges(prev => prev.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!schedule) return;
+
+    const validRanges = splitRanges.filter(range => 
+      range.start && range.end && 
+      timeToMinutes(range.start) < timeToMinutes(range.end) &&
+      timeToMinutes(range.start) >= timeToMinutes(schedule.start_time) &&
+      timeToMinutes(range.end) <= timeToMinutes(schedule.end_time)
+    );
+    
+    // 🔧 최소 2개 구간 필요
+    if (validRanges.length < 2) {
+      setError('최소 2개의 유효한 분할 구간을 입력해주세요.');
+      return;
+    }
+
+    // 🔧 분할 사유는 선택사항 - 빈 값도 허용
+    const finalReason = reason.trim() || '관리자 분할';
+
+    // 🔧 분할 지점 생성
+    const sortedRanges = validRanges.sort((a, b) => 
+      timeToMinutes(a.start) - timeToMinutes(b.start)
+    );
+    
+    const splitPoints = [];
+    for (let i = 0; i < sortedRanges.length - 1; i++) {
+      splitPoints.push(sortedRanges[i].end);
+    }
+    
+    console.log('🔧 생성된 분할 지점:', splitPoints);
+    console.log('🔧 스케줄 ID:', schedule.id);
+    console.log('🔧 분할 사유:', finalReason);
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      await onSplit(schedule.id, splitPoints, finalReason);
+      
+    } catch (error) {
+      console.error('분할 오류:', error);
+      setError(error instanceof Error ? error.message : '분할 처리 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+
+  return (
+    <div style={{ padding: '0 8px' }}>
+      {error && (
+        <div style={{
+          backgroundColor: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: UNIFIED_STYLES.borderRadius,
+          padding: UNIFIED_STYLES.padding,
+          marginBottom: UNIFIED_STYLES.marginBottom,
+          color: '#dc2626',
+          fontSize: UNIFIED_STYLES.fontSize
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* 🔧 원본 스케줄 시간 hh:mm 표기 */}
+      <div style={{
+        backgroundColor: '#f8fafc',
+        padding: UNIFIED_STYLES.padding,
+        borderRadius: UNIFIED_STYLES.borderRadius,
+        marginBottom: UNIFIED_STYLES.marginBottom,
+        border: '1px solid #e2e8f0'
+      }}>
+        <h4 style={{ 
+          margin: '0 0 10px 0', 
+          color: '#374151',
+          fontSize: '16px',
+          fontWeight: '600'
+        }}>
+          분할할 원본 스케줄
+        </h4>
+        <div style={{ display: 'grid', gap: '8px', fontSize: UNIFIED_STYLES.fontSize }}>
+          <p style={{ margin: 0 }}>
+            교수: <strong>{schedule?.professor_name}</strong> - {schedule?.course_name}
+          </p>
+          <p style={{ margin: 0 }}>
+            시간: <strong>{schedule?.start_time?.slice(0, 5)} ~ {schedule?.end_time?.slice(0, 5)}</strong>
+          </p>
+          <p style={{ margin: 0 }}>
+            날짜: {schedule?.shoot_date} / 스튜디오: {schedule?.sub_locations?.name || schedule?.sub_location_id}번
+          </p>
+          <p style={{ margin: 0 }}>
+            촬영형식: {schedule?.shooting_type || 'PPT'}
+          </p>
+        </div>
+      </div>
+
+      {/* 분할 구간 설정 */}
+      <div style={{ marginBottom: UNIFIED_STYLES.marginBottom }}>
+        <h4 style={{ 
+          margin: '0 0 12px 0', 
+          color: '#374151',
+          fontSize: '16px',
+          fontWeight: '600'
+        }}>
+          분할 구간 설정 (최소 2개 구간 필요)
+        </h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {splitRanges.map((range, index) => (
+            <div key={index} style={{
+              display: 'grid',
+              gridTemplateColumns: '100px 1fr 30px 1fr auto',
+              alignItems: 'center',
+              gap: UNIFIED_STYLES.gap,
+              padding: UNIFIED_STYLES.padding,
+              backgroundColor: '#f9fafb',
+              borderRadius: UNIFIED_STYLES.borderRadius,
+              border: '1px solid #e5e7eb'
+            }}>
+              <label style={{ 
+                fontSize: UNIFIED_STYLES.labelSize,
+                fontWeight: '500',
+                color: '#374151'
+              }}>
+                구간 {index + 1}:
+              </label>
+              
+              <select
+                value={range.start}
+                onChange={(e) => updateSplitRange(index, 'start', e.target.value)}
+                disabled={loading}
+                style={{
+                  padding: UNIFIED_STYLES.padding,
+                  border: '1px solid #d1d5db',
+                  borderRadius: UNIFIED_STYLES.borderRadius,
+                  fontSize: UNIFIED_STYLES.fontSize,
+                  outline: 'none',
+                  transition: 'border-color 0.15s ease-in-out'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+              >
+                <option value="">시작 시간</option>
+                {validTimeOptions.map(time => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+
+              <span style={{ 
+                textAlign: 'center', 
+                fontSize: UNIFIED_STYLES.fontSize, 
+                color: '#6b7280',
+                fontWeight: '500'
+              }}>
+                ~
+              </span>
+              
+              <select
+                value={range.end}
+                onChange={(e) => updateSplitRange(index, 'end', e.target.value)}
+                disabled={loading}
+                style={{
+                  padding: UNIFIED_STYLES.padding,
+                  border: '1px solid #d1d5db',
+                  borderRadius: UNIFIED_STYLES.borderRadius,
+                  fontSize: UNIFIED_STYLES.fontSize,
+                  outline: 'none',
+                  transition: 'border-color 0.15s ease-in-out'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+              >
+                <option value="">종료 시간</option>
+                {validTimeOptions.map(time => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+              
+              {splitRanges.length > 1 && (
+                <button
+                  onClick={() => removeSplitRange(index)}
+                  disabled={loading}
+                  style={{
+                    background: '#ef4444',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: UNIFIED_STYLES.borderRadius,
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    fontWeight: '500'
+                  }}
+                >
+                  삭제
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        
+        <button
+          onClick={addSplitRange}
+          disabled={loading}
+          style={{
+            background: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: UNIFIED_STYLES.borderRadius,
+            padding: UNIFIED_STYLES.padding,
+            fontSize: UNIFIED_STYLES.fontSize,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            marginTop: '12px',
+            fontWeight: '500'
+          }}
+        >
+          + 분할 구간 추가
+        </button>
+      </div>
+
+{/* 🔧 분할 사유 - 필수 아님 */}
+      <div style={{ marginBottom: UNIFIED_STYLES.marginBottom }}>
+        <label style={{ 
+          display: 'block', 
+          marginBottom: '8px', 
+          fontWeight: '600',
+          fontSize: UNIFIED_STYLES.labelSize
+        }}>
+          분할 사유 (선택사항)
+        </label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="예: 촬영자 배치를 위한 시간 분할, 복수 촬영진 필요, 장비 교체 시간 확보 등..."
+          rows={2}
+          disabled={loading}
+          style={{
+            width: '100%',
+            padding: UNIFIED_STYLES.padding,
+            border: '1px solid #d1d5db',
+            borderRadius: UNIFIED_STYLES.borderRadius,
+            fontSize: UNIFIED_STYLES.fontSize,
+            resize: 'none',
+            fontFamily: 'inherit',
+            outline: 'none',
+            transition: 'border-color 0.15s ease-in-out'
+          }}
+        />
+      </div>
+
+      {previewSegments.length > 0 && (
+        <div style={{
+          backgroundColor: '#ecfdf5',
+          padding: UNIFIED_STYLES.padding,
+          borderRadius: UNIFIED_STYLES.borderRadius,
+          marginBottom: UNIFIED_STYLES.marginBottom,
+          border: '1px solid #a7f3d0'
+        }}>
+          <h4 style={{ 
+            margin: '0 0 12px 0', 
+            color: '#065f46',
+            fontSize: '16px',
+            fontWeight: '600'
+          }}>
+            {previewSegments.length === 1 
+              ? '시간 수정 미리보기' 
+              : `분할 결과 미리보기 (${previewSegments.length}개 세그먼트)`}
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {previewSegments.map((segment, index) => (
+              <div key={index} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: UNIFIED_STYLES.padding,
+                backgroundColor: 'white',
+                borderRadius: UNIFIED_STYLES.borderRadius,
+                fontSize: UNIFIED_STYLES.fontSize,
+                border: '1px solid #a7f3d0'
+              }}>
+                <span style={{ fontWeight: '500' }}>
+                  {segment.segment}교시: {segment.start_time} ~ {segment.end_time}
+                </span>
+                <span style={{ 
+                  color: '#059669', 
+                  fontWeight: '600',
+                  backgroundColor: '#d1fae5',
+                  padding: '4px 8px',
+                  borderRadius: '12px',
+                  fontSize: '13px'
+                }}>
+                  {segment.duration}시간
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '12px',
+        paddingTop: '16px',
+        borderTop: '1px solid #e5e7eb'
+      }}>
+        <button
+          onClick={onCancel}
+          disabled={loading}
+          style={{
+            padding: UNIFIED_STYLES.padding,
+            border: '1px solid #d1d5db',
+            borderRadius: UNIFIED_STYLES.borderRadius,
+            background: 'white',
+            color: '#374151',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: UNIFIED_STYLES.fontSize,
+            fontWeight: '500'
+          }}
+        >
+          취소
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={loading || previewSegments.length < 2}  // 🔧 사유 필수 조건 제거
+          style={{
+            padding: UNIFIED_STYLES.padding,
+            border: 'none',
+            borderRadius: UNIFIED_STYLES.borderRadius,
+            background: (loading || previewSegments.length < 2) ? '#9ca3af' : '#059669',
+            color: 'white',
+            cursor: (loading || previewSegments.length < 2) ? 'not-allowed' : 'pointer',
+            fontSize: UNIFIED_STYLES.fontSize,
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          {loading && (
+            <div style={{
+              width: '16px',
+              height: '16px',
+              border: '2px solid rgba(255,255,255,0.3)',
+              borderTop: '2px solid white',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }} />
+          )}
+          {loading ? '분할 중...' : '분할 실행'}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // 제작센터 연락 모달 컴포넌트
 const ContactCenterModal = ({ open, onClose, contactInfo }: {
@@ -33,7 +517,7 @@ const ContactCenterModal = ({ open, onClose, contactInfo }: {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 3000
+      zIndex: 10000
     }}>
       <div style={{
         backgroundColor: 'white',
@@ -49,13 +533,13 @@ const ContactCenterModal = ({ open, onClose, contactInfo }: {
           fontSize: '18px',
           fontWeight: 'bold'
         }}>
-          ⚠️ 온라인 수정 불가
+          온라인 수정 불가
         </h3>
         <p style={{ 
           marginBottom: '16px', 
           lineHeight: 1.5,
           color: '#374151',
-          fontSize: '14px'
+          fontSize: UNIFIED_STYLES.fontSize
         }}>
           수정 가능 기간(목요일 23:59)이 지났습니다.<br/>
           스케줄 변경을 원하시면 제작센터로 연락해주세요.
@@ -65,7 +549,7 @@ const ContactCenterModal = ({ open, onClose, contactInfo }: {
           backgroundColor: '#fef2f2',
           borderRadius: '8px',
           marginBottom: '20px',
-          fontSize: '14px',
+          fontSize: UNIFIED_STYLES.fontSize,
           fontWeight: 'bold',
           color: '#dc2626',
           whiteSpace: 'pre-line'
@@ -75,13 +559,13 @@ const ContactCenterModal = ({ open, onClose, contactInfo }: {
         <button
           onClick={onClose}
           style={{
-            padding: '10px 20px',
+            padding: UNIFIED_STYLES.padding,
             backgroundColor: '#2563eb',
             color: 'white',
             border: 'none',
-            borderRadius: '6px',
+            borderRadius: UNIFIED_STYLES.borderRadius,
             cursor: 'pointer',
-            fontSize: '14px',
+            fontSize: UNIFIED_STYLES.fontSize,
             fontWeight: '500'
           }}
         >
@@ -129,7 +613,7 @@ const ReasonModal = ({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 2000
+      zIndex: 10000
     }}>
       <div style={{
         backgroundColor: 'white',
@@ -154,10 +638,10 @@ const ReasonModal = ({
           rows={4}
           style={{
             width: '100%',
-            padding: '12px',
+            padding: UNIFIED_STYLES.padding,
             border: '1px solid #d1d5db',
-            borderRadius: '6px',
-            fontSize: '14px',
+            borderRadius: UNIFIED_STYLES.borderRadius,
+            fontSize: UNIFIED_STYLES.fontSize,
             outline: 'none',
             resize: 'vertical',
             marginBottom: '16px',
@@ -172,12 +656,12 @@ const ReasonModal = ({
           <button
             onClick={onClose}
             style={{
-              padding: '8px 16px',
+              padding: UNIFIED_STYLES.padding,
               border: '1px solid #d1d5db',
-              borderRadius: '6px',
+              borderRadius: UNIFIED_STYLES.borderRadius,
               backgroundColor: 'white',
               cursor: 'pointer',
-              fontSize: '14px'
+              fontSize: UNIFIED_STYLES.fontSize
             }}
           >
             취소
@@ -192,13 +676,13 @@ const ReasonModal = ({
               setReason('');
             }}
             style={{
-              padding: '8px 16px',
+              padding: UNIFIED_STYLES.padding,
               border: 'none',
-              borderRadius: '6px',
+              borderRadius: UNIFIED_STYLES.borderRadius,
               backgroundColor: '#2563eb',
               color: 'white',
               cursor: 'pointer',
-              fontSize: '14px',
+              fontSize: UNIFIED_STYLES.fontSize,
               fontWeight: '500'
             }}
           >
@@ -217,14 +701,17 @@ export default function StudioScheduleModal({
   locations,
   userRole,
   onSave,
-  onDelete
+  onDelete,
+  mode = 'edit',
+  onSplitSchedule
 }: StudioScheduleModalProps) {
+  const [currentMode, setCurrentMode] = useState<'edit' | 'split'>(mode === 'split' ? 'split' : 'edit');
+
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [userIdLoading, setUserIdLoading] = useState(true);
 
-  // 스케줄 정책 상태
   const [policyStatus, setPolicyStatus] = useState({
     canEdit: true,
     message: '',
@@ -232,20 +719,16 @@ export default function StudioScheduleModal({
     urgencyLevel: 'safe' as 'safe' | 'warning' | 'danger'
   });
 
-  // 모달 상태
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [reasonModalOpen, setReasonModalOpen] = useState(false);
   const [requestType, setRequestType] = useState<'modify' | 'cancel'>('modify');
 
-  // 중복 체크 상태
   const [checkingConflict, setCheckingConflict] = useState(false);
   const [conflictDetected, setConflictDetected] = useState(false);
 
-  // 스케줄 히스토리 상태 추가
   const [scheduleHistory, setScheduleHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // 초기값 처리 함수
   const getInitValue = (value: any): string => {
     if (value === null || value === undefined) return '';
     return String(value).trim();
@@ -263,16 +746,13 @@ export default function StudioScheduleModal({
     return timeStr;
   };
 
-  // 버튼 표시 조건들
   const approvalStatus = initialData?.scheduleData?.approval_status;
   const isAdmin = userRole === 'admin' || userRole === 'system_admin' || userRole === 'schedule_admin';
   const isCancelRequest = approvalStatus === 'cancel_request'||
     approvalStatus === 'cancellation_requested';
 
-  // 수정/신규 모드 구분
   const isEditMode = !!(initialData?.scheduleData && initialData.scheduleData.id);
 
-  // 폼 데이터 상태
   const getInitialFormData = () => {
     const scheduleData = initialData?.scheduleData;
     
@@ -289,7 +769,6 @@ export default function StudioScheduleModal({
         sub_location_id: getInitValue(scheduleData.sub_location_id || initialData.locationId)
       };
     } else {
-      // 신규 등록 모드
       const regRange = SchedulePolicy.getRegistrationDateRange();
       
       return {
@@ -311,7 +790,6 @@ export default function StudioScheduleModal({
   const [shootingTypes, setShootingTypes] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // 교수 자동완성 처리 함수
   const [selectedProfessorInfo, setSelectedProfessorInfo] = useState<any>(null);
   
   const handleProfessorChange = (value: string, professor?: any) => {
@@ -330,11 +808,133 @@ export default function StudioScheduleModal({
     }
   };
 
-  // ESC 키 처리 추가
+   const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+
+const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], reason: string) => {
+  console.log('🔧 스케줄 분할 요청:', { scheduleId, splitPoints, reason });
+
+  try {
+    // 1. 원본 스케줄 조회
+    const { data: originalSchedule, error: fetchError } = await supabase
+      .from('schedules')
+      .select('*')
+      .eq('id', scheduleId)
+      .single();
+
+    if (fetchError || !originalSchedule) {
+      throw new Error('원본 스케줄을 찾을 수 없습니다.');
+    }
+
+    console.log('📋 원본 스케줄:', originalSchedule);
+
+    // 2. 헬퍼 함수들
+    const timeToMinutes = (timeString: string): number => {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const minutesToTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    };
+
+    const startMinutes = timeToMinutes(originalSchedule.start_time);
+    const endMinutes = timeToMinutes(originalSchedule.end_time);
+    
+    // 3. 분할 지점 처리
+    let segments = [];
+    
+    if (!splitPoints || splitPoints.length === 0) {
+      // 🔧 분할 지점이 없는 경우 - 단순 시간 수정으로 처리
+      segments = [{
+        start_time: originalSchedule.start_time,
+        end_time: originalSchedule.end_time
+      }];
+      
+      console.log('🔧 시간 수정 모드 - 세그먼트:', segments);
+    } else {
+      // 🔧 실제 분할 처리
+      const splitMinutes = splitPoints
+        .map(timeToMinutes)
+        .filter(minutes => minutes > startMinutes && minutes < endMinutes)
+        .sort((a, b) => a - b);
+      
+      console.log('🔧 유효한 분할 지점 (분 단위):', splitMinutes);
+      
+      let currentStart = startMinutes;
+
+      // 각 분할 지점까지 세그먼트 생성
+      splitMinutes.forEach((splitPoint) => {
+        segments.push({
+          start_time: minutesToTime(currentStart),
+          end_time: minutesToTime(splitPoint)
+        });
+        currentStart = splitPoint;
+      });
+
+      // 마지막 세그먼트
+      segments.push({
+        start_time: minutesToTime(currentStart),
+        end_time: minutesToTime(endMinutes)
+      });
+    }
+
+    console.log('🔧 생성된 세그먼트:', segments);
+
+    if (segments.length === 0) {
+      throw new Error('유효한 세그먼트가 생성되지 않았습니다.');
+    }
+
+    // 4. RPC 함수 호출로 분할 실행
+    const { data: insertResult, error: insertError } = await supabase.rpc('split_schedule', {
+      p_original_schedule_id: scheduleId,
+      p_segments: segments,
+      p_reason: reason,
+      p_user_id: parseInt(localStorage.getItem('userId') || '0')
+    });
+
+    if (insertError) {
+      console.error('❌ RPC 오류:', insertError);
+      throw new Error(`분할 처리 중 오류: ${insertError.message}`);
+    }
+
+    console.log('✅ 분할 완료:', insertResult);
+
+    // 5. 스케줄 목록 새로고침
+    await fetchData();
+
+    const message = segments.length === 1 
+      ? '스케줄 시간이 수정되었습니다!'
+      : `스케줄이 성공적으로 ${segments.length}개로 분할되었습니다!`;
+    
+    alert(message);
+
+  } catch (error) {
+    console.error('❌ 분할 오류:', error);
+    alert(error instanceof Error ? error.message : '분할 처리 중 오류가 발생했습니다.');
+    throw error;
+  }
+};
+
+
+  const switchToSplitMode = () => {
+    setCurrentMode('split');
+  };
+
+  const switchToEditMode = () => {
+    setCurrentMode('edit');
+  };
+
+  // ESC 키 처리
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && open && !saving) {
-        // 다른 모달이 열려있으면 해당 모달만 닫기
         if (reasonModalOpen) {
           setReasonModalOpen(false);
           return;
@@ -343,7 +943,6 @@ export default function StudioScheduleModal({
           setContactModalOpen(false);
           return;
         }
-        // 메인 모달 닫기
         onClose();
       }
     };
@@ -354,16 +953,14 @@ export default function StudioScheduleModal({
     }
   }, [open, saving, reasonModalOpen, contactModalOpen, onClose]);
 
-  // 🔥 개선된 스케줄 히스토리 조회 함수 (하드코딩 제거)
   const fetchScheduleHistory = async (scheduleId: number) => {
     if (!scheduleId) return;
 
     setLoadingHistory(true);
     
     try {
-      console.log('📜 스케줄 히스토리 조회 시작:', scheduleId);
+      console.log('스케줄 히스토리 조회 시작:', scheduleId);
 
-      // 1. schedule_history 테이블에서 변경 기록 조회
       const { data: historyData, error: historyError } = await supabase
         .from('schedule_history')
         .select('*')
@@ -374,7 +971,6 @@ export default function StudioScheduleModal({
         console.error('히스토리 조회 오류:', historyError);
       }
 
-      // 2. schedules 테이블에서 기본 정보 조회
       const { data: scheduleData, error: scheduleError } = await supabase
         .from('schedules')
         .select('*')
@@ -385,7 +981,6 @@ export default function StudioScheduleModal({
         console.error('스케줄 데이터 조회 오류:', scheduleError);
       }
 
-      // 🔥 핵심 히스토리만 추려내는 함수
       const getEssentialHistory = (rawHistory: any[]) => {
         const timeChangeRegex = /시간변경:\s*([^\s→]+).*→\s*([^\s,\]]+)/;
 
@@ -398,25 +993,21 @@ export default function StudioScheduleModal({
         };
 
         rawHistory.forEach(item => {
-          // 등록
           if (!found.등록 && item.action === '등록됨') {
             essential.push(item);
             found.등록 = true;
             return;
           }
-          // 승인
           if (!found.승인 && (item.action === '승인처리' || item.action === '승인완료')) {
             essential.push(item);
             found.승인 = true;
             return;
           }
-          // 취소
           if (!found.취소 && item.action === '취소완료') {
             essential.push(item);
             found.취소 = true;
             return;
           }
-          // 시간 변경: 가장 최근 1개만, 그리고 old/new가 다를 때만
           if (!found.시간변경 && item.reason === '시간 변경') {
             const match = item.details.match(timeChangeRegex);
             if (match && match[1] !== match[2]) { 
@@ -430,16 +1021,13 @@ export default function StudioScheduleModal({
           }
         });
 
-        // 최신순 정렬
         essential.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         return essential;
       };
 
-      // 🔥 사용자명 변환 함수 (실제 사용자 이름 사용)
       const getUserDisplayName = (changedBy: any): string => {
         if (!changedBy) return getCurrentUserName();
         
-        // 이미 한글 이름인 경우
         if (typeof changedBy === 'string' && isNaN(Number(changedBy))) {
           return changedBy;
         }
@@ -447,19 +1035,16 @@ export default function StudioScheduleModal({
         return getCurrentUserName();
       };
 
-      // ✅ 수정된 사용자 이름 반환 함수 (하드코딩 제거)
       const getCurrentUserName = () => {
         return localStorage.getItem('userName') || 
                localStorage.getItem('displayName') || 
                'Unknown User';
       };
 
-      // 🔥 변경 내용을 상세히 파싱하는 함수
       const parseScheduleChanges = (description: string): { reason: string; details: string } => {
         if (!description) return { reason: '스케줄 변경', details: '스케줄이 수정되었습니다' };
         
         try {
-          // 시간 변경 패턴 매칭
           const timeChangePattern = /시간변경:\s*([^→]+)→([^,\]]+)/;
           const timeMatch = description.match(timeChangePattern);
           
@@ -475,7 +1060,6 @@ export default function StudioScheduleModal({
             }
           }
           
-          // 날짜 변경 패턴 매칭
           const dateChangePattern = /날짜변경:\s*([^→]+)→([^,\]]+)/;
           const dateMatch = description.match(dateChangePattern);
           
@@ -491,7 +1075,6 @@ export default function StudioScheduleModal({
             }
           }
           
-          // 교수명 변경 패턴 매칭
           const professorChangePattern = /교수명변경:\s*([^→]+)→([^,\]]+)/;
           const professorMatch = description.match(professorChangePattern);
           
@@ -507,7 +1090,6 @@ export default function StudioScheduleModal({
             }
           }
           
-          // 관리자 직접 수정
           if (description.includes('관리자 직접 수정') || description.includes('직접 수정')) {
             const requestorMatch = description.match(/\[요청자:\s*([^\]]+)\]/);
             const requestor = requestorMatch && requestorMatch[1] ? String(requestorMatch[1]).trim() : '';
@@ -517,7 +1099,6 @@ export default function StudioScheduleModal({
             };
           }
           
-          // 수정 요청
           if (description.includes('수정 요청')) {
             return {
               reason: '수정 요청',
@@ -525,7 +1106,6 @@ export default function StudioScheduleModal({
             };
           }
           
-          // 취소 관련
           if (description.includes('취소')) {
             return {
               reason: '취소 처리',
@@ -533,7 +1113,6 @@ export default function StudioScheduleModal({
             };
           }
           
-          // 기본값
           return {
             reason: '스케줄 변경',
             details: description
@@ -550,12 +1129,9 @@ export default function StudioScheduleModal({
 
       const currentUserName = getCurrentUserName();
 
-      // 3. 히스토리 생성 (중복 제거를 위해 Map 사용)
       const historyMap = new Map<string, any>();
 
-      // ✅ 수정된 기본 히스토리 (하드코딩 제거)
       if (scheduleData) {
-        // 등록 기록 - 실제 등록자 정보 사용
         const actualCreator = scheduleData.created_by_name || 
                              scheduleData.professor_name || 
                              currentUserName;
@@ -564,13 +1140,12 @@ export default function StudioScheduleModal({
           id: `created_${scheduleData.id}`,
           action: '등록됨',
           reason: '최초 스케줄 등록',
-          changed_by: actualCreator,  // 🔥 하드코딩 제거
+          changed_by: actualCreator,
           created_at: scheduleData.created_at,
           details: `${scheduleData.professor_name} 교수님 스케줄 등록`,
           source: 'system'
         });
 
-        // 현재 상태별 히스토리
         if (scheduleData.approval_status === 'approved') {
           historyMap.set(`approved_${scheduleData.id}`, {
             id: `approved_${scheduleData.id}`,
@@ -596,13 +1171,11 @@ export default function StudioScheduleModal({
         }
       }
 
-      // schedule_history 데이터 추가 (중복 제거)
       if (historyData && historyData.length > 0) {
-        // 중복 제거: 같은 시간대 동일 액션 제거
         const uniqueHistory = historyData.reduce((acc: any[], current) => {
           const timeKey = new Date(current.created_at).getTime();
           const existing = acc.find(item => 
-            Math.abs(new Date(item.created_at).getTime() - timeKey) < 5000 && // 5초 이내
+            Math.abs(new Date(item.created_at).getTime() - timeKey) < 5000 &&
             item.change_type === current.change_type
           );
           
@@ -612,15 +1185,12 @@ export default function StudioScheduleModal({
           return acc;
         }, []);
 
-        // 의미있는 히스토리만 추가 (최대 8개)
         uniqueHistory.slice(0, 8).forEach(item => {
           const key = `history_${item.id}`;
           
           if (!historyMap.has(key)) {
-            // 🔥 변경 내용 상세 파싱
             const parsedChange = parseScheduleChanges(item.description || '');
             
-            // 액션명 결정
             let actionName = '수정됨';
             if (item.change_type === 'cancelled') {
               actionName = '취소요청';
@@ -653,12 +1223,11 @@ export default function StudioScheduleModal({
         });
       }
 
-      // 🔥 핵심 내역만 필터링
       const allHistory = Array.from(historyMap.values());
       const essentialHistory = getEssentialHistory(allHistory);
 
       setScheduleHistory(essentialHistory);
-      console.log('✅ 히스토리 조회 완료:', essentialHistory.length, '개');
+      console.log('히스토리 조회 완료:', essentialHistory.length, '개');
 
     } catch (error) {
       console.error('히스토리 조회 오류:', error);
@@ -668,7 +1237,6 @@ export default function StudioScheduleModal({
     }
   };
 
-  // ✅ 수정된 사용자 ID 조회 (테스트 계정 제거)
   useEffect(() => {
     const getCurrentUserId = async () => {
       if (!open) return;
@@ -682,14 +1250,12 @@ export default function StudioScheduleModal({
         let mappedUserId: number | null = null;
 
         if (storedUserName && storedUserRole) {
-          // ✅ 테스트 계정 제거된 매핑
           const userMapping: { [key: string]: number } = {
             'system_admin': 1,
             'schedule_admin': 2,
             'academy_manager': 3,
             'studio_manager': 4,
             'professor': 5
-            // 🔥 테스트 계정들 완전 제거
           };
 
           if (userMapping[storedUserName]) {
@@ -710,7 +1276,7 @@ export default function StudioScheduleModal({
         }
         
       } catch (error) {
-        console.error('❌ 사용자 ID 조회 실패:', error);
+        console.error('사용자 ID 조회 실패:', error);
         setCurrentUserId(5);
       } finally {
         setUserIdLoading(false);
@@ -720,7 +1286,6 @@ export default function StudioScheduleModal({
     getCurrentUserId();
   }, [open]);
 
-  // 스케줄 정책 상태 체크
   useEffect(() => {
     if (open) {
       const status = SchedulePolicy.getStatusMessage();
@@ -733,7 +1298,6 @@ export default function StudioScheduleModal({
     }
   }, [open]);
 
-  // 초기 데이터 로딩 (히스토리 포함)
   useEffect(() => {
     if (initialData && open) {
       setFormData(getInitialFormData());
@@ -747,7 +1311,6 @@ export default function StudioScheduleModal({
     }
   }, [initialData, open, isEditMode]);
 
-  // 모달 닫힐 때 초기화
   useEffect(() => {
     if (!open) {
       setSaving(false);
@@ -758,7 +1321,6 @@ export default function StudioScheduleModal({
     }
   }, [open]);
 
-  // 촬영형식 데이터 로딩
   useEffect(() => {
     if (open) {
       fetchShootingTypes();
@@ -792,7 +1354,6 @@ export default function StudioScheduleModal({
     }
   };
 
-  // 촬영형식별 호환 스튜디오 필터링
   const compatibleStudios = useMemo(() => {
     if (!formData.shooting_type) {
       return [];
@@ -823,7 +1384,6 @@ export default function StudioScheduleModal({
     return compatible;
   }, [formData.shooting_type, locations, initialData?.shootingTypeMapping]);
 
-  // 촬영형식 변경 시 스튜디오 선택 처리
   useEffect(() => {
     if (!formData.shooting_type) {
       if (formData.sub_location_id) {
@@ -865,7 +1425,6 @@ export default function StudioScheduleModal({
     }
   }, [formData.shooting_type, compatibleStudios, locations, isEditMode]);
 
-  // 중복 체크 함수
   const checkScheduleConflict = async (
     shoot_date: string,
     start_time: string,
@@ -903,18 +1462,17 @@ export default function StudioScheduleModal({
       const { data, error } = await query;
 
       if (error) {
-        console.error('❌ 중복 체크 쿼리 오류:', error);
+        console.error('중복 체크 쿼리 오류:', error);
         return false;
       }
 
       return Array.isArray(data) && data.length > 0;
     } catch (error) {
-      console.error('❌ 중복 체크 예외:', error);
+      console.error('중복 체크 예외:', error);
       return false;
     }
   };
 
-  // 실시간 중복 체크
   useEffect(() => {
     const checkConflict = async () => {
       setCheckingConflict(true);
@@ -949,21 +1507,8 @@ export default function StudioScheduleModal({
     }
   }, [formData.shoot_date, formData.start_time, formData.end_time, formData.sub_location_id, compatibleStudios]);
 
-  // 시간 옵션 생성
-  const generateStudioTimeOptions = () => {
-    const options = [];
-    for (let hour = 9; hour <= 22; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        options.push(timeString);
-      }
-    }
-    return options;
-  };
-
   const timeOptions = generateStudioTimeOptions();
 
-  // 폼 데이터 변경 처리
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({
       ...prev,
@@ -971,18 +1516,17 @@ export default function StudioScheduleModal({
     }));
   };
 
-  // 승인 처리 함수들
   const handleApproveModification = async () => {
     const confirmApprove = confirm(
       `${formData.professor_name} 교수님의 수정 요청을 승인하시겠습니까?\n\n` +
-      `승인 후 관리자가 스케줄을 수정할 수 있습니다.`  // ✅ "매니저" → "관리자"
+      `승인 후 관리자가 스케줄을 수정할 수 있습니다.`
     );
 
     if (!confirmApprove) return;
 
     setSaving(true);
     try {
-      const adminName = localStorage.getItem('userName') || 'Unknown User';  // ✅ 하드코딩 제거
+      const adminName = localStorage.getItem('userName') || 'Unknown User';
       const adminId = parseInt(localStorage.getItem('userId') || '0');
       
       const { error } = await supabase
@@ -1028,7 +1572,7 @@ export default function StudioScheduleModal({
 
     setSaving(true);
     try {
-      const adminName = localStorage.getItem('userName') || 'Unknown User';  // ✅ 하드코딩 제거
+      const adminName = localStorage.getItem('userName') || 'Unknown User';
       
       const { error } = await supabase
         .from('schedules')
@@ -1046,7 +1590,7 @@ export default function StudioScheduleModal({
         .insert({
           schedule_id: initialData.scheduleData.id,
           change_type: 'approved',
-          changed_by: parseInt(localStorage.getItem('userId') || '0'),  // ✅ 정수 타입으로 수정
+          changed_by: parseInt(localStorage.getItem('userId') || '0'),
           description: `취소 승인 처리 완료 (승인자: ${adminName})`,
           old_value: JSON.stringify(initialData.scheduleData),
           new_value: JSON.stringify({
@@ -1067,7 +1611,6 @@ export default function StudioScheduleModal({
     }
   };
 
-  // 저장 처리
   const handleSave = async (action: 'temp' | 'request' | 'approve'|'cancel_approve') => {
     if (userIdLoading) {
       setMessage('사용자 정보를 확인하는 중입니다. 잠시만 기다려주세요.');
@@ -1091,7 +1634,6 @@ export default function StudioScheduleModal({
         })
         .eq('id', scheduleId);
 
-      // ✅ 수정된 adminName 변수 정의 (하드코딩 제거)
       const adminName = localStorage.getItem('userName') || 
                        localStorage.getItem('displayName') || 
                        'Unknown User';
@@ -1103,7 +1645,7 @@ export default function StudioScheduleModal({
         .insert({
           schedule_id: scheduleId,
           change_type: 'cancelled',
-          changed_by: parseInt(localStorage.getItem('userId') || '0'),  // ✅ 정수 타입으로 수정
+          changed_by: parseInt(localStorage.getItem('userId') || '0'),
           description: `관리자 직권 취소: ${adminName}이 직접 취소 처리`,
           old_value: JSON.stringify(initialData.scheduleData),
           new_value: JSON.stringify({
@@ -1119,7 +1661,6 @@ export default function StudioScheduleModal({
       return;
     }
 
-    // 수정 모드일 때 정책 체크
     if (isEditMode && action !== 'approve') {
       const canEdit = SchedulePolicy.canEditOnline();
       if (!canEdit) {
@@ -1128,7 +1669,6 @@ export default function StudioScheduleModal({
       }
     }
 
-    // 중복 체크
     if (conflictDetected) {
       alert('선택하신 시간대에 이미 다른 스케줄이 있습니다. 시간을 조정해주세요.');
       return;
@@ -1145,12 +1685,11 @@ export default function StudioScheduleModal({
 
       const result = await onSave(formDataWithUser, action);
       
-      // 🔥 저장 성공 시 상세 히스토리 기록 (수정 모드일 때)
       if (result.success && isEditMode) {
-        const currentUser = localStorage.getItem('userName') || 'Unknown User';  // ✅ 하드코딩 제거
+        const currentUser = localStorage.getItem('userName') || 'Unknown User';
         const originalData = initialData?.scheduleData;
         
-        console.log('🔍 히스토리 기록 시작:', {
+        console.log('히스토리 기록 시작:', {
           currentUser,
           originalData: {
             start_time: originalData?.start_time,
@@ -1166,7 +1705,6 @@ export default function StudioScheduleModal({
           }
         });
         
-        // 상세한 변경 내용 비교
         const changes = [];
         
         if (originalData?.start_time !== formData.start_time || originalData?.end_time !== formData.end_time) {
@@ -1181,14 +1719,12 @@ export default function StudioScheduleModal({
           changes.push(`교수명변경: ${originalData?.professor_name} → ${formData.professor_name}`);
         }
         
-        console.log('🔍 감지된 변경사항:', changes);
+        console.log('감지된 변경사항:', changes);
         
-        // 변경사항이 있을 때만 기록
         if (changes.length > 0) {
           const detailsText = changes.join(', ');
           const actionType = action === 'approve' ? 'approved' : 'modification_requested';
           
-          // 🔥 실제 입력된 사유 사용
           let reasonText = '';
           if (action === 'approve') {
             reasonText = '관리자 직접 수정';
@@ -1196,7 +1732,7 @@ export default function StudioScheduleModal({
             reasonText = modificationReason || selectedProfessorInfo?.reason || '시간변경';
           }
           
-          console.log('🔍 기록할 히스토리:', { actionType, reasonText, detailsText });
+          console.log('기록할 히스토리:', { actionType, reasonText, detailsText });
           
           try {
             const historyResult = await supabase
@@ -1204,14 +1740,13 @@ export default function StudioScheduleModal({
               .insert({
                 schedule_id: initialData.scheduleData.id,
                 change_type: actionType,
-                description: `수정 요청: ${reasonText} [요청자: ${currentUser}]`, // 🔥 사유 포함
-                changed_by: currentUserId,  // ✅ 정수 타입으로 수정
+                description: `수정 요청: ${reasonText} [요청자: ${currentUser}]`,
+                changed_by: currentUserId,
                 old_value: JSON.stringify(originalData),
                 new_value: JSON.stringify(formData),
                 changed_at: new Date().toISOString()
               });
 
-              // 🔥 메시지 발송 추가
               if (action === 'approve') {
                 const messageText = `[스케줄 수정 완료]\\n\\n교수명: ${formData.professor_name}\\n촬영일: ${formData.shoot_date}\\n시간: ${formData.start_time}~${formData.end_time}\\n처리자: ${currentUser}\\n\\n스케줄이 최종 수정되었습니다.`;
                 
@@ -1225,9 +1760,9 @@ export default function StudioScheduleModal({
                 });
                }
               
-            console.log('✅ 히스토리 기록 성공:', historyResult);
+            console.log('히스토리 기록 성공:', historyResult);
           } catch (historyError) {
-            console.error('❌ 히스토리 기록 실패:', historyError);
+            console.error('히스토리 기록 실패:', historyError);
           }
         }
       }
@@ -1260,7 +1795,7 @@ export default function StudioScheduleModal({
       `교수명: ${formData.professor_name}\n` +
       `날짜: ${formData.shoot_date}\n` +
       `시간: ${formData.start_time} ~ ${formData.end_time}\n\n` +
-      `※ 삭제된 스케줄은 복구할 수 없습니다.`
+      `삭제된 스케줄은 복구할 수 없습니다.`
     );
 
     if (!confirmDelete) return;
@@ -1299,11 +1834,9 @@ export default function StudioScheduleModal({
     }
   };
 
-  // StudioScheduleModal 컴포넌트에 상태 추가
   const [modificationReason, setModificationReason] = useState('');
   const [cancellationReason, setCancellationReason] = useState('');
 
-  // handleRequestWithReason 함수 수정
   const handleRequestWithReason = (reason: string) => {
     if (requestType === 'modify') {
       setModificationReason(reason);
@@ -1315,7 +1848,6 @@ export default function StudioScheduleModal({
     handleSave(actionMap[requestType] as 'temp');
   };
 
-  // 스튜디오 옵션 라벨 생성 함수
   const getStudioOptionLabel = (studio: any) => {
     let label = `${studio.name}번 스튜디오`;
 
@@ -1337,30 +1869,6 @@ export default function StudioScheduleModal({
     return label;
   };
 
-  // ✅ 수정된 히스토리 액션 타입별 한국어 변환 (하드코딩 제거)
-  const getActionText = (action: string) => {
-    const styleMap: { [key: string]: { text: string } } = {
-      'UPDATE': { text: '수정' },
-      'created': { text: '등록됨' },
-      'modified': { text: '수정됨' },
-      'cancelled': { text: '취소됨' },
-      'approved': { text: '승인됨' },
-      'rejected': { text: '거부됨' },
-      'modification_requested': { text: '수정요청' },
-      'modification_approved': { text: '수정승인' },
-      'schedule_modified': { text: '관리자수정' },  // ✅ "매니저수정" → "관리자수정"
-      'schedule_cancelled': { text: '관리자취소' }, // ✅ "매니저취소" → "관리자취소"
-      '등록됨': { text: '등록됨' },
-      '수정요청': { text: '수정요청' },
-      '승인완료': { text: '승인완료' },
-      '수정': { text: '수정' }
-    };
-
-    const style = styleMap[action] || { text: action };
-    return style;
-  };
-
-  // 날짜 포맷팅 함수
   const formatDateTime = (dateTime: string) => {
     return new Date(dateTime).toLocaleString('ko-KR', {
       year: 'numeric',
@@ -1371,858 +1879,915 @@ export default function StudioScheduleModal({
     });
   };
 
-  // 히스토리 아이템 배경색 결정 함수
-  const getHistoryItemStyle = (action: string, source: string) => {
-    if (action === 'cancelled' || action === 'schedule_cancelled') {
-      return {
-        backgroundColor: '#fef2f2',
-        borderColor: '#fecaca',
-        iconColor: '#dc2626'
-      };
-    }
-    if (action === 'modified' || action === 'schedule_modified' || action === 'modification_requested') {
-      return {
-        backgroundColor: '#f0fdf4',
-        borderColor: '#bbf7d0',
-        iconColor: '#059669'
-      };
-    }
-    if (action === 'approved') {
-      return {
-        backgroundColor: '#eff6ff',
-        borderColor: '#dbeafe',
-        iconColor: '#2563eb'
-      };
-    }
-    return {
-      backgroundColor: '#f9fafb',
-      borderColor: '#e5e7eb',
-      iconColor: '#6b7280'
-    };
-  };
-
   if (!open) return null;
+
+  const isSplitMode = currentMode === 'split';
 
   return (
     <>
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000
-      }}>
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          width: '800px',
-          maxWidth: '95vw',
-          minHeight: '500px',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
+          {/* 개선된 통일 모달 사이즈 - 완전 반응형 */}
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            zIndex: 1000,
+            paddingTop: '100px', // ✅ 80px → 60px (조금 더 위로)
+            paddingBottom: '20px',
+            paddingLeft: '20px',
+            paddingRight: '20px',
+            overflowY: 'auto'
+          }} onClick={handleBackdropClick}>
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '850px', // ✅ 900px → 850px (살짝 축소)
+              minWidth: '320px', // ✅ 700px → 320px (모바일 대응)
+              maxHeight: 'calc(100vh - 100px)', // ✅ 90px → 100px (여유공간)
+              overflow: 'hidden',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+              display: 'flex',
+              flexDirection: 'column',
+              margin: '0 auto'
+            }} onClick={(e) => e.stopPropagation()}>
+
           {/* 헤더 */}
           <div style={{
-            padding: '20px 24px',
             borderBottom: '1px solid #E5E7EB',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
             flexShrink: 0
           }}>
-            <h2 style={{ 
-              margin: 0, 
-              fontSize: '18px', 
-              fontWeight: 'bold',
-              color: '#111827'
+            {/* 탭 헤더 */}
+            {isEditMode && isAdmin && (
+              <div style={{
+                display: 'flex',
+                borderBottom: '1px solid #e5e7eb'
+              }}>
+                <button
+                  onClick={switchToEditMode}
+                  style={{
+                    flex: 1,
+                    padding: '10px 20px',
+                    border: 'none',
+                    backgroundColor: currentMode === 'edit' ? 'white' : '#f9fafb',
+                    color: currentMode === 'edit' ? '#059669' : '#6b7280',
+                    borderBottom: currentMode === 'edit' ? '2px solid #059669' : '2px solid transparent',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}
+                >
+                  스케줄 편집
+                </button>
+                <button
+                  onClick={switchToSplitMode}
+                  style={{
+                    flex: 1,
+                    padding: '10px 20px',
+                    border: 'none',
+                    backgroundColor: currentMode === 'split' ? 'white' : '#f9fafb',
+                    color: currentMode === 'split' ? '#f59e0b' : '#6b7280',
+                    borderBottom: currentMode === 'split' ? '2px solid #f59e0b' : '2px solid transparent',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}
+                >
+                  스케줄 분할
+                </button>
+              </div>
+            )}
+            
+            {/* 모달 제목 */}
+            <div style={{
+              padding: '16px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
             }}>
-              {isEditMode ? '🔧 스튜디오 스케줄 관리' : '📝 스튜디오 스케줄 등록'}
-            </h2>
-            <button
-              onClick={onClose}
-              disabled={saving}
-              style={{
-                background: 'none',
-                border: 'none',
-                fontSize: '24px',
-                cursor: saving ? 'not-allowed' : 'pointer',
-                padding: '0',
-                color: '#6b7280',
-                opacity: saving ? 0.5 : 1
-              }}
-            >
-              ×
-            </button>
+              <h2 style={{ 
+                margin: 0, 
+                fontSize: '16px', 
+                fontWeight: 'bold',
+                color: '#111827'
+              }}>
+                {isSplitMode ? '스케줄 분할' : 
+                 isEditMode ? '스튜디오 스케줄 관리' : '스튜디오 스케줄 등록'}
+              </h2>
+              <button
+                onClick={onClose}
+                disabled={saving}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  padding: '0',
+                  color: '#6b7280',
+                  opacity: saving ? 0.5 : 1
+                }}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
-          {/* 메인 콘텐츠 영역 (2컬럼 레이아웃) */}
+          {/* 메인 콘텐츠 */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: isEditMode && scheduleHistory.length > 0 ? '1fr 350px' : '1fr',
-            gap: '24px',
-            padding: '24px',
             flex: 1,
-            overflowY: 'auto'
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
           }}>
-            {/* 왼쪽: 폼 필드들 */}
-            <div>
-              {/* 촬영 날짜 */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  촬영 날짜 <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="date"
-                  value={formData.shoot_date}
-                  onChange={(e) => handleChange('shoot_date', e.target.value)}
-                  disabled={saving}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    backgroundColor: saving ? '#f9fafb' : 'white'
-                  }}
-                />
-              </div>
-
-              {/* 시간 정보 */}
+            {isSplitMode && isEditMode ? (
+              /* 분할 모드 */
               <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: '1fr 1fr', 
-                gap: '16px',
-                marginBottom: '20px' 
+                flex: 1, 
+                padding: '20px',
+                overflowY: 'auto'
               }}>
-                <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '6px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#374151'
-                  }}>
-                    시작 시간 <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <select
-                    value={formData.start_time}
-                    onChange={(e) => handleChange('start_time', e.target.value)}
-                    disabled={saving}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      outline: 'none',
-                      backgroundColor: saving ? '#f9fafb' : 'white'
-                    }}
-                  >
-                    <option value="">시작 시간 선택</option>
-                    {timeOptions.map(time => (
-                      <option key={time} value={time}>{time}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '6px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#374151'
-                  }}>
-                    종료 시간 <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  <select
-                    value={formData.end_time}
-                    onChange={(e) => handleChange('end_time', e.target.value)}
-                    disabled={saving}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      outline: 'none',
-                      backgroundColor: saving ? '#f9fafb' : 'white'
-                    }}
-                  >
-                    <option value="">종료 시간 선택</option>
-                    {timeOptions.map(time => (
-                      <option key={time} value={time}>{time}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* 교수명/강의명 */}
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: '1fr 1fr', 
-                gap: '16px',
-                marginBottom: '20px' 
-              }}>
-                <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '6px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#374151'
-                  }}>
-                    교수명 <span style={{ color: '#ef4444' }}>*</span>
-                  </label>
-                  {/* ProfessorAutocomplete 컴포넌트 */}
-                  <ProfessorAutocomplete
-                    value={formData.professor_name || ''}
-                    onChange={(value) => handleChange('professor_name', value)}
-                    disabled={saving}
-                  />
-                </div>
-                <div>
-                  <label style={{
-                    display: 'block',
-                    marginBottom: '6px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#374151'
-                  }}>
-                    강의명
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.course_name}
-                    onChange={(e) => handleChange('course_name', e.target.value)}
-                    disabled={saving}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      outline: 'none',
-                      backgroundColor: saving ? '#f9fafb' : 'white'
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* 강의코드 */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  강의코드
-                </label>
-                <input
-                  type="text"
-                  value={formData.course_code}
-                  onChange={(e) => handleChange('course_code', e.target.value)}
-                  disabled={saving}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    backgroundColor: saving ? '#f9fafb' : 'white'
-                  }}
+                <ScheduleSplitSection
+                  schedule={initialData.scheduleData}
+                  onSplit={handleSplitSchedule}
+                  onCancel={switchToEditMode}
                 />
               </div>
-
-              {/* 촬영형식 */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  촬영형식 <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <select
-                  value={formData.shooting_type}
-                  onChange={(e) => handleChange('shooting_type', e.target.value)}
-                  disabled={saving || isLoading}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    backgroundColor: saving || isLoading ? '#f9fafb' : 'white'
-                  }}
-                >
-                  <option value="">촬영형식 선택</option>
-                  {shootingTypes.map(type => (
-                    <option key={type.id} value={type.name}>{type.name}</option>
-                  ))}
-                </select>
+            ) : (
+              /* 편집 모드 */
+              <>
+                {/* 메인 콘텐츠 영역 */}
                 <div style={{
-                  fontSize: '12px',
-                  color: '#6b7280',
-                  marginTop: '4px'
+                  display: 'grid',
+                  gridTemplateColumns: isEditMode && scheduleHistory.length > 0 ? '1.2fr 0.8fr' : '1fr',
+                  gap: '20px',
+                  padding: '20px',
+                  flex: 1,
+                  overflow: 'hidden'
                 }}>
-                  {formData.shooting_type ? 
-                    `선택된 촬영형식에 호환되는 스튜디오만 아래에 표시됩니다.` :
-                    '촬영형식을 먼저 선택하면 호환되는 스튜디오만 표시됩니다.'
-                  }
-                </div>
-              </div>
-
-              {/* 스튜디오 선택 */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  스튜디오 <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                
-                <select
-                  value={formData.sub_location_id}
-                  onChange={(e) => handleChange('sub_location_id', e.target.value)}
-                  disabled={saving || (!formData.shooting_type)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    backgroundColor: saving || (!formData.shooting_type) ? '#f9fafb' : 'white'
-                  }}
-                >
-                  {(() => {
-                    if (!formData.shooting_type) {
-                      return <option value="">촬영형식을 먼저 선택해주세요</option>;
-                    }
-                    
-                    if (compatibleStudios.length === 0) {
-                      return <option value="">호환되는 스튜디오가 없습니다</option>;
-                    }
-                    
-                    return (
-                      <>
-                        {!formData.sub_location_id && (
-                          <option value="">스튜디오 선택</option>
-                        )}
-                        {compatibleStudios.map(studio => {
-                          const optionLabel = getStudioOptionLabel(studio);
-                          
-                          return (
-                            <option key={`studio-${studio.id}`} value={studio.id.toString()}>
-                              {optionLabel}
-                            </option>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
-                </select>
-                
-                <div style={{
-                  fontSize: '12px',
-                  color: '#6b7280',
-                  marginTop: '4px'
-                }}>
-                  {(() => {
-                    if (!formData.shooting_type) {
-                      return '촬영형식을 선택하면 호환되는 스튜디오만 표시됩니다.';
-                    }
-                    
-                    if (compatibleStudios.length === 0) {
-                      return `"${formData.shooting_type}" 촬영형식과 호환되는 스튜디오가 없습니다.`;
-                    }
-                    
-                    if (formData.sub_location_id) {
-                      const selectedStudio = compatibleStudios.find(s => s.id.toString() === formData.sub_location_id);
-                      return `선택됨: ${selectedStudio ? `${selectedStudio.name}번 스튜디오` : '알 수 없음'} | 총 ${compatibleStudios.length}개 호환`;
-                    }
-                    
-                    return `"${formData.shooting_type}" 촬영형식 호환 스튜디오: ${compatibleStudios.length}개`;
-                  })()}
-                </div>
-              </div>
-
-              {/* 중복 체크 안내 */}
-              {checkingConflict && (
-                <div style={{
-                  color: '#2563eb',
-                  marginBottom: '12px',
-                  fontWeight: 'bold',
-                  fontSize: '14px'
-                }}>
-                  🔍 스튜디오를 확인 중입니다...
-                </div>
-              )}
-
-              {!checkingConflict && conflictDetected && (
-                <div style={{
-                  color: '#dc2626',
-                  marginBottom: '12px',
-                  fontWeight: 'bold',
-                  fontSize: '14px',
-                  padding: '8px',
-                  backgroundColor: '#fef2f2',
-                  border: '1px solid #fecaca',
-                  borderRadius: '4px'
-                }}>
-                  ⚠️ 선택하신 날짜와 시간에 이미 같은 스튜디오에서 예약된 스케줄이 있습니다. 시간을 조정해주세요.
-                </div>
-              )}
-
-              {/* 비고 */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{
-                  display: 'block',
-                  marginBottom: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  color: '#374151'
-                }}>
-                  비고
-                </label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => handleChange('notes', e.target.value)}
-                  disabled={saving}
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    backgroundColor: saving ? '#f9fafb' : 'white',
-                    resize: 'vertical',
-                    minHeight: '80px'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* 오른쪽: 변경 히스토리 (수정 모드일 때만 표시) */}
-            {isEditMode && (
-              <div style={{
-                borderLeft: '1px solid #e5e7eb',
-                paddingLeft: '24px'
-              }}>
-                <h3 style={{
-                  margin: '0 0 16px 0',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#374151',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  변경 히스토리
-                  {scheduleHistory.length > 0 && (
-                    <span style={{
-                      fontSize: '12px',
-                      backgroundColor: '#e5e7eb',
-                      color: '#6b7280',
-                      padding: '2px 6px',
-                      borderRadius: '10px'
-                    }}>
-                      {scheduleHistory.length}
-                    </span>
-                  )}
-                </h3>
-
-                {loadingHistory ? (
-                  <div style={{
-                    padding: '20px',
-                    textAlign: 'center',
-                    color: '#6b7280',
-                    fontSize: '14px'
-                  }}>
-                    <div style={{
-                      width: '20px',
-                      height: '20px',
-                      border: '2px solid #e5e7eb',
-                      borderTop: '2px solid #3b82f6',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite',
-                      margin: '0 auto 8px'
-                    }} />
-                    히스토리를 불러오는 중...
-                  </div>
-                ) : scheduleHistory.length === 0 ? (
-                  <div style={{
-                    padding: '20px',
-                    textAlign: 'center',
-                    color: '#9ca3af',
-                    fontSize: '14px',
-                    backgroundColor: '#f9fafb',
-                    borderRadius: '8px',
-                    border: '1px dashed #d1d5db'
-                  }}>
-                    변경 기록이 없습니다
-                  </div>
-                ) : (
-                  <div style={{
-                    maxHeight: '800px',
+                  {/* 왼쪽: 폼 필드들 */}
+                  <div style={{ 
                     overflowY: 'auto',
                     paddingRight: '8px'
                   }}>
-                    {scheduleHistory.map((historyItem, index) => {
-                      return (
-                        <div key={historyItem.id || index} style={{
+                    {/* 날짜/시간을 한 행에 배치 - 통일된 스타일 */}
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr 1fr', 
+                      gap: UNIFIED_STYLES.gap,
+                      marginBottom: UNIFIED_STYLES.marginBottom
+                    }}>
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          촬영 날짜 *
+                        </label>
+                        <input
+                          type="date"
+                          value={formData.shoot_date}
+                          onChange={(e) => handleChange('shoot_date', e.target.value)}
+                          disabled={saving}
+                          style={{
+                            width: '100%',
+                            padding: UNIFIED_STYLES.padding,
+                            border: '1px solid #d1d5db',
+                            borderRadius: UNIFIED_STYLES.borderRadius,
+                            fontSize: UNIFIED_STYLES.fontSize,
+                            outline: 'none',
+                            backgroundColor: saving ? '#f9fafb' : 'white',
+                            transition: 'border-color 0.15s ease-in-out'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                          onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                        />
+                      </div>
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          시작 시간 *
+                        </label>
+                        <select
+                          value={formData.start_time}
+                          onChange={(e) => handleChange('start_time', e.target.value)}
+                          disabled={saving}
+                          style={{
+                            width: '100%',
+                            padding: UNIFIED_STYLES.padding,
+                            border: '1px solid #d1d5db',
+                            borderRadius: UNIFIED_STYLES.borderRadius,
+                            fontSize: UNIFIED_STYLES.fontSize,
+                            outline: 'none',
+                            backgroundColor: saving ? '#f9fafb' : 'white',
+                            transition: 'border-color 0.15s ease-in-out'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                          onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                        >
+                          <option value="">시작 시간</option>
+                          {timeOptions.map(time => (
+                            <option key={time} value={time}>{time}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          종료 시간 *
+                        </label>
+                        <select
+                          value={formData.end_time}
+                          onChange={(e) => handleChange('end_time', e.target.value)}
+                          disabled={saving}
+                          style={{
+                            width: '100%',
+                            padding: UNIFIED_STYLES.padding,
+                            border: '1px solid #d1d5db',
+                            borderRadius: UNIFIED_STYLES.borderRadius,
+                            fontSize: UNIFIED_STYLES.fontSize,
+                            outline: 'none',
+                            backgroundColor: saving ? '#f9fafb' : 'white',
+                            transition: 'border-color 0.15s ease-in-out'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                          onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                        >
+                          <option value="">종료 시간</option>
+                          {timeOptions.map(time => (
+                            <option key={time} value={time}>{time}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 교수명/강의명 */}
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr', 
+                      gap: UNIFIED_STYLES.gap,
+                      marginBottom: UNIFIED_STYLES.marginBottom
+                    }}>
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          교수명 *
+                        </label>
+                        <ProfessorAutocomplete
+                          value={formData.professor_name || ''}
+                          onChange={(value) => handleChange('professor_name', value)}
+                          disabled={saving}
+                        />
+                      </div>
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          강의명
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.course_name}
+                          onChange={(e) => handleChange('course_name', e.target.value)}
+                          disabled={saving}
+                          style={{
+                            width: '100%',
+                            padding: UNIFIED_STYLES.padding,
+                            border: '1px solid #d1d5db',
+                            borderRadius: UNIFIED_STYLES.borderRadius,
+                            fontSize: UNIFIED_STYLES.fontSize,
+                            outline: 'none',
+                            backgroundColor: saving ? '#f9fafb' : 'white',
+                            transition: 'border-color 0.15s ease-in-out'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                          onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 강의코드 */}
+                    <div style={{ marginBottom: UNIFIED_STYLES.marginBottom }}>
+                      <label style={{
+                        display: 'block',
+                        marginBottom: '6px',
+                        fontSize: UNIFIED_STYLES.labelSize,
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        강의코드
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.course_code}
+                        onChange={(e) => handleChange('course_code', e.target.value)}
+                        disabled={saving}
+                        style={{
+                          width: '100%',
+                          padding: UNIFIED_STYLES.padding,
+                          border: '1px solid #d1d5db',
+                          borderRadius: UNIFIED_STYLES.borderRadius,
+                          fontSize: UNIFIED_STYLES.fontSize,
+                          outline: 'none',
+                          backgroundColor: saving ? '#f9fafb' : 'white',
+                          transition: 'border-color 0.15s ease-in-out'
+                        }}
+                        onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                        onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                      />
+                    </div>
+
+                    {/* 촬영형식/스튜디오 */}
+                    <div style={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr', 
+                      gap: UNIFIED_STYLES.gap,
+                      marginBottom: UNIFIED_STYLES.marginBottom
+                    }}>
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          촬영형식 *
+                        </label>
+                        <select
+                          value={formData.shooting_type}
+                          onChange={(e) => handleChange('shooting_type', e.target.value)}
+                          disabled={saving || isLoading}
+                          style={{
+                            width: '100%',
+                            padding: UNIFIED_STYLES.padding,
+                            border: '1px solid #d1d5db',
+                            borderRadius: UNIFIED_STYLES.borderRadius,
+                            fontSize: UNIFIED_STYLES.fontSize,
+                            outline: 'none',
+                            backgroundColor: saving || isLoading ? '#f9fafb' : 'white',
+                            transition: 'border-color 0.15s ease-in-out'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                          onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                        >
+                          <option value="">촬영형식 선택</option>
+                          {shootingTypes.map(type => (
+                            <option key={type.id} value={type.name}>{type.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          marginBottom: '6px',
+                          fontSize: UNIFIED_STYLES.labelSize,
+                          fontWeight: '600',
+                          color: '#374151'
+                        }}>
+                          스튜디오 *
+                        </label>
+                        <select
+                          value={formData.sub_location_id}
+                          onChange={(e) => handleChange('sub_location_id', e.target.value)}
+                          disabled={saving || (!formData.shooting_type)}
+                          style={{
+                            width: '100%',
+                            padding: UNIFIED_STYLES.padding,
+                            border: '1px solid #d1d5db',
+                            borderRadius: UNIFIED_STYLES.borderRadius,
+                            fontSize: UNIFIED_STYLES.fontSize,
+                            outline: 'none',
+                            backgroundColor: saving || (!formData.shooting_type) ? '#f9fafb' : 'white',
+                            transition: 'border-color 0.15s ease-in-out'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                          onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                        >
+                          {(() => {
+                            if (!formData.shooting_type) {
+                              return <option value="">촬영형식을 먼저 선택해주세요</option>;
+                            }
+                            
+                            if (compatibleStudios.length === 0) {
+                              return <option value="">호환되는 스튜디오가 없습니다</option>;
+                            }
+                            
+                            return (
+                              <>
+                                {!formData.sub_location_id && (
+                                  <option value="">스튜디오 선택</option>
+                                )}
+                                {compatibleStudios.map(studio => (
+                                  <option key={`studio-${studio.id}`} value={studio.id.toString()}>
+                                    {getStudioOptionLabel(studio)}
+                                  </option>
+                                ))}
+                              </>
+                            );
+                          })()}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* 중복 체크 안내 */}
+                    {checkingConflict && (
+                      <div style={{
+                        color: '#2563eb',
+                        marginBottom: '12px',
+                        fontWeight: 'bold',
+                        fontSize: '14px'
+                      }}>
+                        스튜디오를 확인 중입니다...
+                      </div>
+                    )}
+
+                    {!checkingConflict && conflictDetected && (
+                      <div style={{
+                        color: '#dc2626',
+                        marginBottom: '12px',
+                        fontWeight: 'bold',
+                        fontSize: '14px',
+                        padding: '8px',
+                        backgroundColor: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        borderRadius: UNIFIED_STYLES.borderRadius
+                      }}>
+                        선택하신 날짜와 시간에 이미 같은 스튜디오에서 예약된 스케줄이 있습니다.
+                      </div>
+                    )}
+
+                    {/* 비고 */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{
+                        display: 'block',
+                        marginBottom: '6px',
+                        fontSize: UNIFIED_STYLES.labelSize,
+                        fontWeight: '600',
+                        color: '#374151'
+                      }}>
+                        비고
+                      </label>
+                      <textarea
+                        value={formData.notes}
+                        onChange={(e) => handleChange('notes', e.target.value)}
+                        disabled={saving}
+                        rows={3}
+                        style={{
+                          width: '100%',
+                          padding: UNIFIED_STYLES.padding,
+                          border: '1px solid #d1d5db',
+                          borderRadius: UNIFIED_STYLES.borderRadius,
+                          fontSize: UNIFIED_STYLES.fontSize,
+                          outline: 'none',
+                          backgroundColor: saving ? '#f9fafb' : 'white',
+                          resize: 'none',
+                          transition: 'border-color 0.15s ease-in-out'
+                        }}
+                        onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                        onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 오른쪽: 변경 히스토리 */}
+                  {isEditMode && (
+                    <div style={{
+                      borderLeft: '1px solid #e5e7eb',
+                      paddingLeft: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden'
+                    }}>
+                      <h3 style={{
+                        margin: '0 0 12px 0',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        color: '#374151',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexShrink: 0
+                      }}>
+                        변경 히스토리
+                        {scheduleHistory.length > 0 && (
+                          <span style={{
+                            fontSize: '10px',
+                            backgroundColor: '#e5e7eb',
+                            color: '#6b7280',
+                            padding: '1px 4px',
+                            borderRadius: '8px'
+                          }}>
+                            {scheduleHistory.length}
+                          </span>
+                        )}
+                      </h3>
+
+                      {loadingHistory ? (
+                        <div style={{
                           padding: '16px',
-                          borderBottom: index < scheduleHistory.length - 1 ? '1px solid #e5e7eb' : 'none',
-                          backgroundColor: index % 2 === 0 ? 'white' : '#f9fafb'
+                          textAlign: 'center',
+                          color: '#6b7280',
+                          fontSize: '12px'
                         }}>
                           <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'flex-start',
-                            marginBottom: '8px'
-                          }}>
-                            <span style={{
-                              fontSize: '14px',
-                              fontWeight: historyItem.action === '승인완료' || historyItem.action === '수정' || 
-                                        historyItem.action === '관리자수정' ? 'bold' : 
-                                        historyItem.action === '등록됨' || historyItem.action === '수정요청' || 
-                                        historyItem.action === '취소요청' ? '600' : 'normal',
-                              color: '#374151'
-                            }}>
-                              {historyItem.action}
-                            </span>
-                            <span style={{
-                              fontSize: '12px',
-                              color: '#6b7280'
-                            }}>
-                              {formatDateTime(historyItem.created_at)}
-                            </span>
-                          </div>
-                          
-                          <div style={{ fontSize: '13px', lineHeight: '1.4' }}>
-                            <div style={{ marginBottom: '4px' }}>
-                              <span style={{ fontWeight: '500', color: '#374151' }}>
-                                {historyItem.action.includes('요청') ? '요청자:' : '처리자:'}
-                              </span>
-                              <span style={{ marginLeft: '8px', color: '#6b7280' }}>
-                                {historyItem.changed_by}
-                              </span>
-                            </div>
-                            
-                            <div style={{ marginBottom: '4px' }}>
-                              <span style={{ fontWeight: '500', color: '#374151' }}>사유:</span>
-                              <span style={{ marginLeft: '8px', color: '#6b7280' }}>
-                                {historyItem.reason}
-                              </span>
-                            </div>
-                            
-                            <div>
-                              <span style={{ fontWeight: '500', color: '#374151' }}>세부내용:</span>
-                              <span style={{ 
-                                marginLeft: '8px', 
-                                color: '#6b7280',
-                                whiteSpace: 'pre-line'  // 🔥 줄바꿈 처리
-                              }}>
-                                {historyItem.details || '상세 정보 없음'}
-                              </span>
-                            </div>
-                          </div>
+                            width: '16px',
+                            height: '16px',
+                            border: '2px solid #e5e7eb',
+                            borderTop: '2px solid #3b82f6',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            margin: '0 auto 6px'
+                          }} />
+                          히스토리를 불러오는 중...
                         </div>
-                      );
-                    })}
+                      ) : scheduleHistory.length === 0 ? (
+                        <div style={{
+                          padding: '16px',
+                          textAlign: 'center',
+                          color: '#9ca3af',
+                          fontSize: '12px',
+                          backgroundColor: '#f9fafb',
+                          borderRadius: '6px',
+                          border: '1px dashed #d1d5db'
+                        }}>
+                          변경 기록이 없습니다
+                        </div>
+                      ) : (
+                        <div style={{
+                          flex: 1,
+                          overflowY: 'auto',
+                          paddingRight: '6px'
+                        }}>
+                          {scheduleHistory.map((historyItem, index) => (
+                            <div key={historyItem.id || index} style={{
+                              padding: '10px',
+                              borderBottom: index < scheduleHistory.length - 1 ? '1px solid #e5e7eb' : 'none',
+                              backgroundColor: index % 2 === 0 ? 'white' : '#f9fafb'
+                            }}>
+                              <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'flex-start',
+                                marginBottom: '6px'
+                              }}>
+                                <span style={{
+                                  fontSize: '12px',
+                                  fontWeight: historyItem.action === '승인완료' || historyItem.action === '수정' || 
+                                            historyItem.action === '관리자수정' ? 'bold' : 
+                                            historyItem.action === '등록됨' || historyItem.action === '수정요청' || 
+                                            historyItem.action === '취소요청' ? '600' : 'normal',
+                                  color: '#374151'
+                                }}>
+                                  {historyItem.action}
+                                </span>
+                                <span style={{
+                                  fontSize: '10px',
+                                  color: '#6b7280'
+                                }}>
+                                  {formatDateTime(historyItem.created_at)}
+                                </span>
+                              </div>
+                              
+                              <div style={{ fontSize: '11px', lineHeight: '1.3' }}>
+                                <div style={{ marginBottom: '3px' }}>
+                                  <span style={{ fontWeight: '500', color: '#374151' }}>
+                                    {historyItem.action.includes('요청') ? '요청자:' : '처리자:'}
+                                  </span>
+                                  <span style={{ marginLeft: '6px', color: '#6b7280' }}>
+                                    {historyItem.changed_by}
+                                  </span>
+                                </div>
+                                
+                                <div style={{ marginBottom: '3px' }}>
+                                  <span style={{ fontWeight: '500', color: '#374151' }}>사유:</span>
+                                  <span style={{ marginLeft: '6px', color: '#6b7280' }}>
+                                    {historyItem.reason}
+                                  </span>
+                                </div>
+                                
+                                <div>
+                                  <span style={{ fontWeight: '500', color: '#374151' }}>세부:</span>
+                                  <span style={{ 
+                                    marginLeft: '6px', 
+                                    color: '#6b7280',
+                                    whiteSpace: 'pre-line'
+                                  }}>
+                                    {historyItem.details || '상세 정보 없음'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 메시지 표시 */}
+                {message && (
+                  <div style={{
+                    margin: '0 20px 12px',
+                    padding: '8px',
+                    borderRadius: '4px',
+                    backgroundColor: message.includes('오류') || message.includes('실패') ? '#fef2f2' : '#f0fdf4',
+                    color: message.includes('오류') || message.includes('실패') ? '#dc2626' : '#166534',
+                    fontSize: '12px',
+                    border: `1px solid ${message.includes('오류') || message.includes('실패') ? '#fecaca' : '#bbf7d0'}`,
+                    flexShrink: 0
+                  }}>
+                    {message}
                   </div>
                 )}
-              </div>
+
+                {/* 상태 표시 */}
+                {isEditMode && (
+                  <div style={{
+                    margin: '0 20px 12px',
+                    padding: '8px',
+                    backgroundColor: '#f0f9ff',
+                    borderRadius: '4px',
+                    border: '1px solid #dbeafe',
+                    flexShrink: 0
+                  }}>
+                    <div style={{ 
+                      fontSize: '11px', 
+                      color: '#1e40af',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <span style={{ fontWeight: '600' }}>현재 상태:</span>
+                      {(() => {
+                        const status = initialData?.scheduleData?.approval_status;
+                        const statusText = {
+                          'pending': '승인 대기중',
+                          'approved': '승인 완료',
+                          'confirmed': '승인 완료', 
+                          'modification_requested': '수정 승인 대기중',
+                          'modification_approved': '수정 승인됨',
+                          'cancellation_requested': '취소 승인 대기중',
+                          'cancelled': '취소됨'
+                        }[status] || status;
+                        
+                        return (
+                          <>
+                            <span>{statusText}</span>
+                            {initialData?.scheduleData?.updated_at && (
+                              <span style={{ color: '#6b7280', fontSize: '10px' }}>
+                                {new Date(initialData.scheduleData.updated_at).toLocaleString('ko-KR')}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          {/* 메시지 표시 */}
-          {message && (
+          {/* 버튼 영역 - 분할 모드가 아닐 때만 */}
+          {!isSplitMode && (
             <div style={{
-              margin: '0 24px 16px',
-              padding: '12px',
-              borderRadius: '6px',
-              backgroundColor: message.includes('오류') || message.includes('실패') ? '#fef2f2' : '#f0fdf4',
-              color: message.includes('오류') || message.includes('실패') ? '#dc2626' : '#166534',
-              fontSize: '14px',
-              border: `1px solid ${message.includes('오류') || message.includes('실패') ? '#fecaca' : '#bbf7d0'}`,
+              padding: '12px 20px',
+              borderTop: '1px solid #E5E7EB',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
               flexShrink: 0
             }}>
-              {message}
-            </div>
-          )}
+              {/* 좌측: 관리자 승인 버튼들 */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {isAdmin && approvalStatus === 'modification_requested' && (
+                  <button
+                    onClick={handleApproveModification}
+                    disabled={saving}
+                    style={{
+                      padding: UNIFIED_STYLES.padding,
+                      backgroundColor: saving ? '#d1d5db' : '#7c3aed',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: UNIFIED_STYLES.borderRadius,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    수정 승인
+                  </button>
+                )}
 
-          {/* 취소 히스토리 🔥 새로 추가할 부분 */}
-          {isEditMode && (
-            <div style={{
-              marginTop: '16px',
-              padding: '12px',
-              backgroundColor: '#f0f9ff',
-              borderRadius: '6px',
-              border: '1px solid #dbeafe'
-            }}>
-              <div style={{ 
-                fontSize: '13px', 
-                color: '#1e40af',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span style={{ fontWeight: '600' }}>📊 현재 상태:</span>
-                {(() => {
-                  const status = initialData?.scheduleData?.approval_status;
-                  const statusText = {
-                    'pending': '승인 대기중',
-                    'approved': '승인 완료',
-                    'confirmed': '승인 완료', 
-                    'modification_requested': '수정 승인 대기중',
-                    'modification_approved': '수정 승인됨',
-                    'cancellation_requested': '취소 승인 대기중',
-                    'cancelled': '취소됨'
-                  }[status] || status;
-                  
-                  return (
-                    <>
-                      <span>{statusText}</span>
-                      {initialData?.scheduleData?.updated_at && (
-                        <span style={{ color: '#6b7280', fontSize: '12px' }}>
-                          • {new Date(initialData.scheduleData.updated_at).toLocaleString('ko-KR')}
-                        </span>
-                      )}
-                    </>
-                  );
-                })()}
+                {isAdmin && approvalStatus === 'cancellation_requested' && (
+                  <button
+                    onClick={handleApproveCancellation}
+                    disabled={saving}
+                    style={{
+                      padding: UNIFIED_STYLES.padding,
+                      backgroundColor: saving ? '#d1d5db' : '#dc2626',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: UNIFIED_STYLES.borderRadius,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    취소 승인
+                  </button>
+                )}
               </div>
-            </div>
-          )}
 
-          {/* 버튼 영역 */}
-          <div style={{
-            padding: '16px 24px',
-            borderTop: '1px solid #E5E7EB',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexShrink: 0
-          }}>
-            {/* 좌측: 관리자 승인 버튼들 */}
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {isAdmin && approvalStatus === 'modification_requested' && (
+              {/* 우측: 기존 버튼들 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {saving && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{
+                      width: '12px', height: '12px',
+                      border: '2px solid #d1d5db',
+                      borderTop: '2px solid #059669',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>처리 중...</span>
+                  </div>
+                )}
+
+                {isEditMode && (
+                  <button
+                    onClick={() => {
+                      const confirmCancel = confirm(
+                        `정말로 이 스케줄을 취소하시겠습니까?\n\n` +
+                        `교수명: ${formData.professor_name}\n` +
+                        `날짜: ${formData.shoot_date}\n` +
+                        `시간: ${formData.start_time} ~ ${formData.end_time}\n\n` +
+                        `관리자 직권으로 즉시 취소됩니다.`
+                      );
+                      
+                      if (confirmCancel) {
+                        handleSave('cancel_approve');
+                      }
+                    }}
+                    disabled={saving}
+                    style={{
+                      padding: UNIFIED_STYLES.padding,
+                      border: '1px solid #dc2626',
+                      borderRadius: UNIFIED_STYLES.borderRadius,
+                      backgroundColor: 'white',
+                      color: '#dc2626',
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      opacity: saving ? 0.5 : 1
+                    }}
+                  >
+                    스케줄 취소
+                  </button>
+                )}
+
+                {isAdmin && isEditMode && (
+                  <button
+                    onClick={handleDelete}
+                    disabled={saving}
+                    style={{
+                      padding: UNIFIED_STYLES.padding,
+                      border: 'none',
+                      borderRadius: UNIFIED_STYLES.borderRadius,
+                      backgroundColor: saving ? '#d1d5db' : '#dc2626',
+                      color: 'white',
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    삭제
+                  </button>
+                )}
+
+                {isAdmin ? (
+                  <>
+                    <button
+                      onClick={() => handleSave('temp')}
+                      disabled={saving || checkingConflict || conflictDetected}
+                      style={{
+                        padding: UNIFIED_STYLES.padding,
+                        border: 'none',
+                        borderRadius: UNIFIED_STYLES.borderRadius,
+                                                backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#6b7280',
+                        color: 'white',
+                        cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      임시저장
+                    </button>
+                    <button
+                      onClick={() => handleSave('approve')}
+                      disabled={saving || checkingConflict || conflictDetected}
+                      style={{
+                        padding: UNIFIED_STYLES.padding,
+                        border: 'none',
+                        borderRadius: UNIFIED_STYLES.borderRadius,
+                        backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#059669',
+                        color: 'white',
+                        cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      승인
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleSave('temp')}
+                      disabled={saving || checkingConflict || conflictDetected}
+                      style={{
+                        padding: UNIFIED_STYLES.padding,
+                        border: 'none',
+                        borderRadius: UNIFIED_STYLES.borderRadius,
+                        backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#6b7280',
+                        color: 'white',
+                        cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      임시저장
+                    </button>
+                    <button
+                      onClick={() => handleSave('request')}
+                      disabled={saving || checkingConflict || conflictDetected}
+                      style={{
+                        padding: UNIFIED_STYLES.padding,
+                        border: 'none',
+                        borderRadius: UNIFIED_STYLES.borderRadius,
+                        backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#2563eb',
+                        color: 'white',
+                        cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
+                        fontSize: '12px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      승인요청
+                    </button>
+                  </>
+                )}
+
                 <button
-                  onClick={handleApproveModification}
+                  onClick={onClose}
                   disabled={saving}
                   style={{
-                    padding: '10px 16px',
-                    backgroundColor: saving ? '#d1d5db' : '#7700ffff',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500'
-                  }}
-                >
-                  수정 승인
-                </button>
-              )}
-
-              {isAdmin && approvalStatus === 'cancellation_requested' && (
-                <button
-                  onClick={handleApproveCancellation}
-                  disabled={saving}
-                  style={{
-                    padding: '10px 16px',
-                    backgroundColor: saving ? '#d1d5db' : '#dc2626',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500'
-                  }}
-                >
-                  취소 승인
-                </button>
-              )}
-            </div>
-
-            {/* 우측: 기존 버튼들 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {saving && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{
-                    width: '14px', height: '14px',
-                    border: '2px solid #d1d5db',
-                    borderTop: '2px solid #059669',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite'
-                  }} />
-                  <span style={{ fontSize: '14px', color: '#6b7280' }}>처리 중...</span>
-                </div>
-              )}
-
-              {/* 스케줄 취소 버튼 (수정 모드일 때만 표시) */}
-              {isEditMode && (
-                <button
-                  onClick={() => {
-                    const confirmCancel = confirm(
-                      `정말로 이 스케줄을 취소하시겠습니까?\n\n` +
-                      `교수명: ${formData.professor_name}\n` +
-                      `날짜: ${formData.shoot_date}\n` +
-                      `시간: ${formData.start_time} ~ ${formData.end_time}\n\n` +
-                      `※ 관리자 직권으로 즉시 취소됩니다.`
-                    );
-                    
-                    if (confirmCancel) {
-                      handleSave('cancel_approve');
-                    }
-                  }}
-                  disabled={saving}
-                  style={{
-                    padding: '10px 16px',
-                    border: '1px solid #dc2626',
-                    borderRadius: '6px',
+                    padding: UNIFIED_STYLES.padding,
+                    border: '1px solid #d1d5db',
+                    borderRadius: UNIFIED_STYLES.borderRadius,
                     backgroundColor: 'white',
-                    color: '#dc2626',
+                    color: '#374151',
                     cursor: saving ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
+                    fontSize: '12px',
                     opacity: saving ? 0.5 : 1
                   }}
                 >
-                  스케줄 취소
+                  닫기
                 </button>
-              )}
-
-              {isAdmin && isEditMode && (
-                <button
-                  onClick={handleDelete}
-                  disabled={saving}
-                  style={{
-                    padding: '10px 16px',
-                    border: 'none',
-                    borderRadius: '6px',
-                    backgroundColor: saving ? '#d1d5db' : '#dc2626',
-                    color: 'white',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500'
-                  }}
-                >
-                  삭제
-                </button>
-              )}
-
-              {isAdmin ? (
-                <>
-                  <button
-                    onClick={() => handleSave('temp')}
-                    disabled={saving || checkingConflict || conflictDetected}
-                    style={{
-                      padding: '10px 16px',
-                      border: 'none',
-                      borderRadius: '6px',
-                      backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#6b7280',
-                      color: 'white',
-                      cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    임시저장
-                  </button>
-                  <button
-                    onClick={() => handleSave('approve')}
-                    disabled={saving || checkingConflict || conflictDetected}
-                    style={{
-                      padding: '10px 16px',
-                      border: 'none',
-                      borderRadius: '6px',
-                      backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#059669',
-                      color: 'white',
-                      cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    승인
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => handleSave('temp')}
-                    disabled={saving || checkingConflict || conflictDetected}
-                    style={{
-                      padding: '10px 16px',
-                      border: 'none',
-                      borderRadius: '6px',
-                      backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#6b7280',
-                      color: 'white',
-                      cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    임시저장
-                  </button>
-                  <button
-                    onClick={() => handleSave('request')}
-                    disabled={saving || checkingConflict || conflictDetected}
-                    style={{
-                      padding: '10px 16px',
-                      border: 'none',
-                      borderRadius: '6px',
-                      backgroundColor: (saving || checkingConflict || conflictDetected) ? '#d1d5db' : '#2563eb',
-                      color: 'white',
-                      cursor: (saving || checkingConflict || conflictDetected) ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    승인요청
-                  </button>
-                </>
-              )}
+              </div>
             </div>
-          </div>
-
-          <style jsx>{`
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-          `}</style>
+          )}
         </div>
       </div>
 
-      {/* 제작센터 연락 모달 */}
+      {/* 연락처 모달 */}
       <ContactCenterModal
         open={contactModalOpen}
         onClose={() => setContactModalOpen(false)}
@@ -2236,6 +2801,49 @@ export default function StudioScheduleModal({
         onClose={() => setReasonModalOpen(false)}
         onSubmit={handleRequestWithReason}
       />
+
+      {/* 개선된 CSS - 포커스 효과 빠르게 사라지게 */}
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        
+        /* 포커스 효과 빠르게 사라지게 */
+        input, select, textarea {
+          transition: border-color 0.15s ease-in-out !important;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+          border-color: #3b82f6 !important;
+          outline: none !important;
+          box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1) !important;
+        }
+        
+        input:not(:focus), select:not(:focus), textarea:not(:focus) {
+          border-color: #d1d5db !important;
+          box-shadow: none !important;
+        }
+        
+        @media (max-width: 768px) {
+          .modal-container {
+            margin-top: 60px !important;
+            padding: 10px !important;
+          }
+          
+          .modal-content {
+            min-width: 90vw !important;
+            max-height: calc(100vh - 80px) !important;
+          }
+        }
+      `}</style>
     </>
   );
 }
+
+// ActionType 매핑
+const actionMap = {
+  modify: 'modify_request',
+  cancel: 'cancel_request'
+} as const;
+

@@ -1,19 +1,49 @@
+// pages/api/professors/get-professors.ts (개선된 버전)
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-});
+// 환경변수 검증
+if (!supabaseUrl) {
+  console.error('❌ NEXT_PUBLIC_SUPABASE_URL이 설정되지 않았습니다.');
+}
+
+if (!supabaseServiceRoleKey) {
+  console.error('❌ SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.');
+}
+
+const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey 
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : null;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // CORS 헤더 추가
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // 환경변수 검증
+  if (!supabaseAdmin) {
+    console.error('❌ Supabase 환경변수가 설정되지 않았습니다.');
+    return res.status(500).json({ 
+      error: '서버 설정 오류',
+      details: 'Supabase 환경변수가 설정되지 않았습니다.'
+    });
   }
 
   try {
@@ -32,7 +62,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (error) {
       console.error('❌ 교수 조회 오류:', error);
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ 
+        error: '교수 데이터 조회 중 오류가 발생했습니다.',
+        details: error.message 
+      });
     }
 
     const formattedData = data?.map(prof => ({
@@ -57,13 +90,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({
       success: true,
-      data: formattedData
+      data: formattedData,
+      count: formattedData.length
     });
 
   } catch (error) {
     console.error('❌ 교수 조회 API 오류:', error);
     return res.status(500).json({
-      error: error instanceof Error ? error.message : '서버 오류'
+      error: '서버 내부 오류가 발생했습니다.',
+      details: error instanceof Error ? error.message : '알 수 없는 오류'
     });
   }
 }
