@@ -131,7 +131,7 @@ export default function ShooterAssignmentModal({
         .from('shooter_location_preferences')
         .select('*')
         .eq('shooter_id', shooter.id)
-        .eq('main_location_id', schedule.main_location_id)
+        .eq('main_location_id', schedule.main_location_id || 1)
         .single();
 
       let locationScore = 0;
@@ -144,9 +144,11 @@ export default function ShooterAssignmentModal({
           locationAvailable = false;
         }
       } else {
-        // 등록되지 않은 장소는 기본적으로 불가능
-        locationAvailable = false;
-      }
+      // ✅ main_location_id가 없으면 기본 점수 부여
+      locationScore = 15;
+      locationAvailable = true;
+      console.log('ℹ️ main_location_id 없음 - 기본 점수 부여');
+    }
 
       if (!locationAvailable) {
         return { 
@@ -491,7 +493,7 @@ export default function ShooterAssignmentModal({
                 {schedule.course_name}
               </div>
               <div style={{ fontSize: '14px', color: '#64748b' }}>
-                {schedule.shoot_date} • {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)} • {schedule.shooting_type}
+                {schedule.shoot_date} • {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)} 
               </div>
             </div>
             

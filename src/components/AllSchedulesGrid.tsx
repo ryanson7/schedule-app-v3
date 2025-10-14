@@ -438,23 +438,28 @@ const fetchAllLocations = async () => {
   }
 };
 
-
-  // 🔧 주석 제거하여 쿼리 오류 해결
 const fetchAllSchedules = async () => {
   try {
-    console.log('📋 스케줄 새로고침 시작...');
+    console.log('📊 통합스케줄 조회 시작...');
     
     const weekDates = generateWeekDates();
     const startDate = weekDates[0].date;
     const endDate = weekDates[6].date;
 
+    // ✅ 수정된 부분: location 정보를 올바르게 조회
     const { data: studioAcademyData, error: scheduleError } = await supabase
       .from('schedules')
       .select(`
         *,
-        sub_locations (
-          *,
-          main_locations (*)
+        sub_locations:sub_location_id (
+          id,
+          name,
+          main_location_id,
+          main_locations:main_location_id (
+            id,
+            name,
+            location_type
+          )
         )
       `)
       .in('schedule_type', ['studio', 'academy'])
@@ -466,23 +471,23 @@ const fetchAllSchedules = async () => {
       .order('start_time');
 
     if (scheduleError) {
-      console.error('스케줄 조회 오류:', scheduleError);
+      console.error('❌ 스케줄 조회 오류:', scheduleError);
       throw scheduleError;
     }
 
-    console.log('📋 스케줄 기본 정보 조회 완료:', studioAcademyData?.length || 0);
-
+    console.log('✅ 스튜디오/아카데미 스케줄 조회:', studioAcademyData?.length || 0);
+    
     if (studioAcademyData && studioAcademyData.length > 0) {
       const shooterIds = studioAcademyData
         .map(s => s.assigned_shooter_id)
         .filter(Boolean);
-
+        
       if (shooterIds.length > 0) {
         const { data: assignedShooters, error: shooterError } = await supabase
           .from('users')
           .select('id, name, phone, role')
           .in('id', shooterIds);
-
+          
         if (!shooterError && assignedShooters) {
           studioAcademyData.forEach(schedule => {
             if (schedule.assigned_shooter_id) {
@@ -496,6 +501,7 @@ const fetchAllSchedules = async () => {
       }
     }
 
+    // ✅ 내부 업무 스케줄 조회
     const { data: internalData, error: internalError } = await supabase
       .from('internal_schedules')
       .select('*')
@@ -506,15 +512,19 @@ const fetchAllSchedules = async () => {
       .order('created_at');
 
     if (internalError) {
-      console.error('내부 스케줄 조회 오류:', internalError);
+      console.error('❌ 내부 스케줄 조회 오류:', internalError);
     }
 
+    // ✅ 수정된 부분: main_location_id를 직접 추가
     const unifiedSchedules = [
       ...(studioAcademyData || []).map(s => ({
         ...s,
-        unified_type: 'studio_academy',
-        unified_location_id: `${s.schedule_type}-${s.sub_location_id}`,  // ✅ 수정
-        unified_date: s.shoot_date
+        unified_type: 'studio-academy',
+        unified_location_id: `${s.schedule_type}-${s.sub_location_id}`,
+        unified_date: s.shoot_date,
+        main_location_id: s.sub_locations?.main_location_id, // ✅ 추가됨
+        location_name: s.sub_locations?.name,
+        main_location_name: s.sub_locations?.main_locations?.name
       })),
       ...(internalData || []).map(s => {
         const typeIndex = APP_CONFIG.internalWorkTypes.indexOf(s.schedule_type);
@@ -522,20 +532,24 @@ const fetchAllSchedules = async () => {
           ...s,
           unified_type: 'internal',
           unified_location_id: `internal-${typeIndex}`,
-          unified_date: s.schedule_date
+          unified_date: s.schedule_date,
+          main_location_id: null, // 내부 업무는 main_location_id 없음
+          location_name: s.schedule_type,
+          main_location_name: null
         };
       })
     ];
 
-    console.log('✅ 통합 스케줄 생성 완료:', unifiedSchedules.length);
+    console.log('✅ 통합스케줄 조회 완료 (location 정보 포함):', unifiedSchedules.length);
     setSchedules(unifiedSchedules);
-
+    
   } catch (error) {
-    console.error('스케줄 조회 오류:', error);
+    console.error('❌ 스케줄 조회 실패:', error);
     setSchedules([]);
     throw error;
   }
 };
+
 
 
   const fetchShooters = async () => {
@@ -2119,7 +2133,7 @@ const renderStudioAcademyCard = (schedule: any) => {
                     촬영장소
                   </span>
                   <div style={{ color: 'var(--text-primary)', fontSize: '12px', fontWeight: '500', marginTop: '2px' }}>
-                    {selectedScheduleForAssignment.sublocations?.main_locations?.name} - {selectedScheduleForAssignment.sublocations?.name}
+                    {selectedScheduleForAssignment.sub_locations?.main_locations?.name} - {selectedScheduleForAssignment.sub_locations?.name}
                   </div>
                 </div>
               </div>
