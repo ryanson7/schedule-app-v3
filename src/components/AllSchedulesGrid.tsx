@@ -1225,7 +1225,7 @@ const sendKakaoWorkMessage = async (schedule: any, customMessage: string) => {
       text: '📋 전체 스케줄 보기',
       style: 'primary',
       action_type: 'open_inapp_browser',
-      value: 'https://localhost:3000'
+      value: 'https://schedule-app-v3-kappa.vercel.app/shooter/schedule-check'
     });
 
     // 텍스트 버전 (fallback)
@@ -1238,7 +1238,7 @@ const sendKakaoWorkMessage = async (schedule: any, customMessage: string) => {
 📍 장소: ${schedule.sub_locations?.main_locations?.name} - ${schedule.sub_locations?.name}
 👨‍🏫 강사: ${schedule.professor_name} / ${schedule.course_name}
 
-전체 스케줄: https://localhost:3000${customMessage ? `\n\n📝 전달사항:\n${customMessage}` : ''}`;
+전체 스케줄: https://schedule-app-v3-kappa.vercel.app/shooter/schedule-check${customMessage ? `\n\n📝 전달사항:\n${customMessage}` : ''}`;
 
     console.log('📧 카카오워크 메시지 블록 생성 완료:', messageBlocks.length, '개 블록');
 
