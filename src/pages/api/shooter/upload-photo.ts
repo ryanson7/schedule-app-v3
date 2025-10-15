@@ -1,4 +1,9 @@
-export const config = { runtime: 'edge' };
+export const config = {
+  runtime: 'edge',
+  api: {
+    bodyParser: false
+  }
+};
 
 import { NextApiRequest, NextApiResponse } from 'next';
 import { supabase } from '../../../utils/supabaseClient';
@@ -27,12 +32,6 @@ interface ApiResponse {
   error?: string;
 }
 
-// formidable 설정
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
 export default async function handler(
   req: NextApiRequest,
