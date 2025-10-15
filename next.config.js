@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
+  reactStrictMode: true,
+  webpack: (config) => {
+    config.cache = false;
+    return config;
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  }
-}
-module.exports = nextConfig
+};
+
+module.exports = nextConfig;
