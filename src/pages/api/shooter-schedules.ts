@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 // pages/api/shooter-schedules.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 

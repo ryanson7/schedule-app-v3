@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 // src/pages/api/admin/create-admin.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';

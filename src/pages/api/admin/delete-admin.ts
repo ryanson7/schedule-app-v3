@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 // src/pages/api/admin/delete-admin.ts
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'DELETE') {

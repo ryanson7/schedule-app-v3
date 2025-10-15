@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 // pages/api/admin/bulk-create-users.ts (완전 교체)
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';

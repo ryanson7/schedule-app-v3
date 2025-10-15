@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 // src/pages/api/professors/verify-login.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 import { supabase } from '../../../utils/supabaseClient';

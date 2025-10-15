@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 import { NextApiRequest, NextApiResponse } from 'next';
 import { supabase } from '../../../utils/supabaseClient';
 import formidable from 'formidable';

@@ -1,14 +1,13 @@
-// pages/api/message/index.ts
+export const config = {
+  runtime: 'edge',
+};
+
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 interface MessageRequest {
   type: string;
   message: string;
 }
-
-export const config = {
-  maxDuration: 60, // ✅ 최대 60초로 늘림
-};
 
 export default async function handler(
   req: NextApiRequest,
@@ -29,9 +28,8 @@ export default async function handler(
 
   const debugLog: any = {
     timestamp: new Date().toISOString(),
-    environment: process.env.VERCEL ? 'Vercel' : 'Local',
-    nodeVersion: process.version,
-    region: process.env.VERCEL_REGION || 'unknown',
+    environment: 'Cloudflare Pages',
+    runtime: 'edge',
   };
 
   try {
@@ -40,15 +38,13 @@ export default async function handler(
     debugLog.messageType = type;
     debugLog.messageLength = message?.length || 0;
 
-    console.log('🔍 [디버깅 시작]', JSON.stringify(debugLog, null, 2));
+    console.log('🔍 [Edge Runtime 시작]', JSON.stringify(debugLog, null, 2));
 
-    // ✅ 1단계: DNS 해석 시간 측정
-    const dnsStart = Date.now();
     const naverWorksUrl = 'https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message';
     
     console.log('📡 요청 URL:', naverWorksUrl);
 
-    // ✅ 2단계: 타임아웃 설정 (50초)
+    // Edge Runtime에서는 AbortController 사용 가능
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       console.error('⏱️ 타임아웃 발생! (50초 초과)');
@@ -86,7 +82,6 @@ export default async function handler(
         
         console.error('❌ API 오류 응답:', errorText);
 
-        // ✅ 오류여도 성공으로 처리
         return res.status(200).json({
           success: false,
           warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
@@ -116,31 +111,18 @@ export default async function handler(
       debugLog.fetchError = {
         name: fetchError.name,
         message: fetchError.message,
-        code: fetchError.code,
-        cause: fetchError.cause?.message || null,
       };
 
       console.error('❌ Fetch 오류 발생!');
       console.error('오류 타입:', fetchError.name);
       console.error('오류 메시지:', fetchError.message);
-      console.error('오류 코드:', fetchError.code);
       console.error('소요 시간:', debugLog.fetchDuration, 'ms');
 
-      // ✅ 타임아웃 확인
       if (fetchError.name === 'AbortError') {
         debugLog.errorType = 'TIMEOUT';
         console.error('🚨 타임아웃 확인됨! 50초 초과');
-      } else if (fetchError.message.includes('ENOTFOUND')) {
-        debugLog.errorType = 'DNS_FAILURE';
-        console.error('🚨 DNS 해석 실패!');
-      } else if (fetchError.message.includes('ECONNREFUSED')) {
-        debugLog.errorType = 'CONNECTION_REFUSED';
-        console.error('🚨 연결 거부됨!');
-      } else if (fetchError.message.includes('ETIMEDOUT')) {
-        debugLog.errorType = 'NETWORK_TIMEOUT';
-        console.error('🚨 네트워크 타임아웃!');
       } else {
-        debugLog.errorType = 'UNKNOWN';
+        debugLog.errorType = 'NETWORK_ERROR';
       }
 
       console.error('📊 전체 디버그 정보:', JSON.stringify(debugLog, null, 2));

@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 import bcrypt from 'bcrypt'
 import { createClient } from '@supabase/supabase-js'
 import type { NextApiRequest, NextApiResponse } from 'next'

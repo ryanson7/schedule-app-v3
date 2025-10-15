@@ -1,3 +1,5 @@
+export const config = { runtime: 'edge' };
+
 // pages/api/shooting-tracker.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 
