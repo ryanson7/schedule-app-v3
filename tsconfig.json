@@ -31,15 +31,19 @@
       "@/contexts/*": ["./contexts/*"],
       "@/utils/*": ["./utils/*"],
       "@/pages/*": ["./pages/*"],
-      "@/styles/*": ["./styles/*"]
+      "@/styles/*": ["./styles/*"],
+      "@/lib/*": ["./src/lib/*"]  // 👈 src/lib 추가!
     }
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
-, "src/pages/api/admin/bulk-create.tss", "next.config.js"  ],
+    ".next/types/**/*.ts",
+    "src/pages/api/admin/bulk-create.tss",
+    "next.config.js",
+    "src/pages/admin/index.js"
+  ],
   "exclude": [
     "node_modules",
     ".next",
