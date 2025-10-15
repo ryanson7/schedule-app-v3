@@ -2516,7 +2516,7 @@ export default function StudioSchedulePage() {
             justifyContent: 'center'
           }}>
             <img 
-              src="http://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
+              src="https://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
               alt="에듀윌 로고"
               style={{
                 maxWidth: '100%',

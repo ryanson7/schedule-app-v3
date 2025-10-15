@@ -1078,11 +1078,11 @@ const sendWeeklyCheckMessage = async (shooter: any) => {
       text: '📋 스케줄 확인하기',
       style: 'primary',
       action_type: 'open_inapp_browser',
-      value: 'https://localhost:3000'
+      value: 'https://schedule-app-v3-kappa.vercel.app/shooter/schedule-check'
     }
   ];
 
-  const textMessage = `📅 안녕하세요. ${shooter.name} PD님\n다음 주 예정 스케줄 확인해주세요.\n\n스케줄 확인: https://localhost:3000`;
+  const textMessage = `📅 안녕하세요. ${shooter.name} PD님\n다음 주 예정 스케줄 확인해주세요.\n\n스케줄 확인: https://schedule-app-v3-kappa.vercel.app/shooter/schedule-check`;
 
   return await sendKakaoWorkMessageByShooter(shooter, textMessage, messageBlocks);
 };
@@ -1103,11 +1103,11 @@ const sendTomorrowConfirmMessage = async (shooter: any) => {
       text: '✅ 확인하기',
       style: 'primary',
       action_type: 'open_inapp_browser',
-      value: 'https://localhost:3000'
+      value: 'https://schedule-app-v3-kappa.vercel.app/shooter/ShooterDashboard'
     }
   ];
 
-  const textMessage = `📋 안녕하세요. ${shooter.name} PD님\n내일 스케줄 확정되었습니다. \n확인 버튼 클릭해주세요.\n\n확인하기: https://localhost:3000`;
+  const textMessage = `📋 안녕하세요. ${shooter.name} PD님\n내일 스케줄 확정되었습니다. \n확인 버튼 클릭해주세요.\n\n확인하기: https://schedule-app-v3-kappa.vercel.app/shooter/ShooterDashboard`;
 
   return await sendKakaoWorkMessageByShooter(shooter, textMessage, messageBlocks);
 };
