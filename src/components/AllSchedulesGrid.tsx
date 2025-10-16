@@ -188,6 +188,8 @@ export default function AllSchedulesGrid({
   const [filteredShooters, setFilteredShooters] = useState<any[]>([]);
   const [customMessage, setCustomMessage] = useState('');  // 🔧 전달사항 메시지
   const [isAssigning, setIsAssigning] = useState(false);  // 🔧 배정 중 상태
+  const [showMessageInput, setShowMessageInput] = useState(false); // 🆕 추가!
+  const [shooterTypeFilter, setShooterTypeFilter] = useState<string>('all'); // 🆕 추가
   const [isTomorrowConfirming, setIsTomorrowConfirming] = useState(false);
 
   
@@ -2061,11 +2063,12 @@ const renderStudioAcademyCard = (schedule: any) => {
           style={{
             background: 'var(--bg-secondary)',
             borderRadius: '16px',
-            padding: '32px',
+            padding: '24px',
             maxWidth: '850px',
             width: '95%',
             maxHeight: '90vh',
             overflowY: 'auto',
+            marginTop:'25px',
             border: '1px solid var(--border-color)',
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
             outline: 'none'
@@ -2229,66 +2232,188 @@ const renderStudioAcademyCard = (schedule: any) => {
 
       {/* 🔧 전달사항 입력란 (배정된 경우에만 표시) */}
       {selectedScheduleForAssignment?.assigned_shooter_id && (
-        <div style={{
-          marginBottom: '20px',
-          padding: '16px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '8px'
-        }}>
-          <label style={{
-            display: 'block',
-            fontSize: '13px',
-            fontWeight: '600',
-            color: 'var(--text-primary)',
-            marginBottom: '8px'
-          }}>
-            📝 전달사항 (선택사항)
-          </label>
-          <textarea
-            value={customMessage}
-            onChange={(e) => setCustomMessage(e.target.value)}
-            placeholder="촬영자에게 전달할 추가 메시지를 입력하세요..."
+        <div style={{ marginBottom: '20px' }}>
+          <button
+            onClick={() => setShowMessageInput(!showMessageInput)}
             style={{
               width: '100%',
-              minHeight: '80px',
-              padding: '8px',
+              padding: '12px',
+              background: 'var(--bg-primary)',
               border: '1px solid var(--border-color)',
-              borderRadius: '4px',
-              resize: 'vertical',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
               fontSize: '13px',
-              outline: 'none'
+              fontWeight: '600',
+              color: 'var(--text-primary)'
             }}
-          />
-          <div style={{
-            fontSize: '11px',
-            color: 'var(--text-secondary)',
-            marginTop: '4px'
-          }}>
-            기본 메시지: "이번주 촬영이 배정되었습니다. 확인해주세요" + 스케줄 정보
-          </div>
+          >
+            <span>📝 전달사항 {showMessageInput ? '접기' : '펼치기'}</span>
+            <span>{showMessageInput ? '▲' : '▼'}</span>
+          </button>
+          
+          {showMessageInput && (
+            <div style={{
+              marginTop: '12px',
+              padding: '16px',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px'
+            }}>
+              <textarea
+                value={customMessage}
+                onChange={(e) => setCustomMessage(e.target.value)}
+                placeholder="촬영자에게 전달할 추가 메시지를 입력하세요..."
+                style={{
+                  width: '100%',
+                  minHeight: '80px',
+                  padding: '8px',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  resize: 'vertical',
+                  fontSize: '13px',
+                  outline: 'none'
+                }}
+              />
+              <div style={{
+                fontSize: '11px',
+                color: 'var(--text-secondary)',
+                marginTop: '4px'
+              }}>
+                기본 메시지: "이번주 촬영이 배정되었습니다. 확인해주세요" + 스케줄 정보
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* 가능한 촬영자 목록 (기존과 동일하지만 선택 시 모달 유지) */}
+      {/* 가능한 촬영자 목록 */}
       <div style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          marginBottom: '16px',
+          flexWrap: 'wrap',  // 🆕 추가
+          gap: '12px'  // 🆕 추가
+        }}>
           <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '16px', fontWeight: '700' }}>
             가능한 촬영자
           </h4>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: '500' }}>
-            전체: {shooters.length}명 / <span style={{ color: 'var(--accent-color)', fontWeight: '700' }}>{filteredShooters.length}</span>명
+          
+          {/* 🆕 타입 필터 버튼 추가 */}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <button
+              onClick={() => setShooterTypeFilter('all')}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '600',
+                border: shooterTypeFilter === 'all' ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                background: shooterTypeFilter === 'all' ? '#3b82f6' : 'white',
+                color: shooterTypeFilter === 'all' ? 'white' : '#6b7280',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              전체
+            </button>
+            <button
+              onClick={() => {
+                // 🆕 디버깅: 촬영자 데이터 확인
+                console.log('=== 촬영자 리스트 ===');
+                filteredShooters.slice(0, 3).forEach((s, i) => {
+                  console.log(`${i+1}번 촬영자:`, {
+                    이름: s.name,
+                    전체데이터: s
+                  });
+                });
+                setShooterTypeFilter('regular');
+              }}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '600',
+                border: shooterTypeFilter === 'regular' ? '2px solid #10b981' : '1px solid #d1d5db',
+                background: shooterTypeFilter === 'regular' ? '#10b981' : 'white',
+                color: shooterTypeFilter === 'regular' ? 'white' : '#6b7280',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              직원
+            </button>
+            <button
+              onClick={() => setShooterTypeFilter('outsourced')}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '600',
+                border: shooterTypeFilter === 'outsourced' ? '2px solid #f59e0b' : '1px solid #d1d5db',
+                background: shooterTypeFilter === 'outsourced' ? '#f59e0b' : 'white',
+                color: shooterTypeFilter === 'outsourced' ? 'white' : '#6b7280',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              파견 {/* dispatch */}
+            </button>
+            <button
+              onClick={() => setShooterTypeFilter('freelancer')}
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                fontWeight: '600',
+                border: shooterTypeFilter === 'freelancer' ? '2px solid #8b5cf6' : '1px solid #d1d5db',
+                background: shooterTypeFilter === 'freelancer' ? '#8b5cf6' : 'white',
+                color: shooterTypeFilter === 'freelancer' ? 'white' : '#6b7280',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              위탁
+            </button>
+            
+            {/* 필터링된 인원수 표시 */}
+            <div style={{ 
+              color: 'var(--text-secondary)', 
+              fontSize: '12px', 
+              fontWeight: '500',
+              marginLeft: '8px'
+            }}>
+            {shooterTypeFilter === 'all' 
+              ? `${filteredShooters.length}명`
+              : `${filteredShooters.filter(shooter => {
+                  if (shooterTypeFilter === 'regular') {
+                    return shooter.usertype === 'schedule_admin' || shooter.shootertype === null || shooter.shootertype === 'regular';
+                  }
+                  if (shooterTypeFilter === 'outsourced') {
+                    return shooter.shootertype === 'dispatch' || shooter.shootertype === 'outsourced';
+                  }
+                  if (shooterTypeFilter === 'freelancer') {
+                    return shooter.shootertype === 'freelancer';
+                  }
+                  return false;
+                }).length}명`
+            }
+
+            </div>
           </div>
         </div>
 
-        <div style={{
-  display: 'grid',
-  gridTemplateColumns: window.innerWidth > 768 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-  gap: window.innerWidth > 768 ? '10px' : '8px',
-  maxHeight: '420px',
-  overflowY: 'auto',
-  padding: '6px'
-}}>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',  // 🆕 4칸으로 고정
+        gap: '10px'
+      }}>
+
   {filteredShooters.length === 0 ? (
     <div style={{
       gridColumn: '1 / -1',
@@ -2306,8 +2431,29 @@ const renderStudioAcademyCard = (schedule: any) => {
         위치, 시간, 프리랜서 주간 스케줄 등을 확인해주세요.
       </div>
     </div>
-  ) : (
-    filteredShooters.map((shooter) => (
+    ) : (
+    filteredShooters
+      .filter(shooter => {
+        if (shooterTypeFilter === 'all') return true;
+        
+        // 직원: usertype이 schedule_admin이거나 shootertype이 null
+        if (shooterTypeFilter === 'regular') {
+          return shooter.usertype === 'schedule_admin' || shooter.shootertype === null || shooter.shootertype === 'regular';
+        }
+        
+        // 파견: shootertype이 dispatch 또는 outsourced
+        if (shooterTypeFilter === 'outsourced') {
+          return shooter.shootertype === 'dispatch' || shooter.shootertype === 'outsourced';
+        }
+        
+        // 위탁: shootertype이 freelancer
+        if (shooterTypeFilter === 'freelancer') {
+          return shooter.shootertype === 'freelancer';
+        }
+        
+        return false;
+      })
+      .map((shooter) => (
       <button
         key={shooter.id}
         onClick={() => handleShooterChange(selectedScheduleForAssignment.id, shooter.id)}

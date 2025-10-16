@@ -54,13 +54,13 @@ const FreelancerWeeklySchedule: React.FC = () => {
   const [scheduleData, setScheduleData] = useState<ScheduleData>({
     weekStartDate: '',
     schedule: {
-      monday: { available: false, startTime: '09:00', endTime: '18:00' },
-      tuesday: { available: false, startTime: '09:00', endTime: '18:00' },
-      wednesday: { available: false, startTime: '09:00', endTime: '18:00' },
-      thursday: { available: false, startTime: '09:00', endTime: '18:00' },
-      friday: { available: false, startTime: '09:00', endTime: '18:00' },
-      saturday: { available: false, startTime: '09:00', endTime: '18:00' },
-      sunday: { available: false, startTime: '09:00', endTime: '18:00' }
+      monday: { available: false, startTime: '09:00', endTime: '19:00' },
+      tuesday: { available: false, startTime: '09:00', endTime: '198:00' },
+      wednesday: { available: false, startTime: '09:00', endTime: '19:00' },
+      thursday: { available: false, startTime: '09:00', endTime: '19:00' },
+      friday: { available: false, startTime: '09:00', endTime: '19:00' },
+      saturday: { available: false, startTime: '09:00', endTime: '19:00' },
+      sunday: { available: false, startTime: '09:00', endTime: '19:00' }
     },
     isAllUnavailable: false,
     unavailableReason: '',
