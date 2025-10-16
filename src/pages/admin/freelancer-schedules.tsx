@@ -1,11 +1,10 @@
-// src/pages/admin/freelancer-schedules.tsx - 신 버전 시간 범위 + 전달사항 표시
+// src/pages/admin/freelancer-schedules.tsx - 최종 수정 버전
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../../utils/supabaseClient";
 import { useWeek } from "../../contexts/WeekContext";
 import React from 'react';
 
-// 🔧 요일 순서 정의
 const DAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 const DAY_NAMES = {
@@ -16,11 +15,6 @@ const DAY_NAMES = {
   friday: '금',
   saturday: '토',
   sunday: '일'
-};
-
-// 🔧 상태 설정 (submitted만 사용)
-const STATUS_CONFIG = {
-  submitted: { label: '등록', color: '#059669', bg: '#ecfdf5' }
 };
 
 interface FreelancerSchedule {
@@ -40,11 +34,17 @@ interface FreelancerSchedule {
   shooter_emergency?: string;
 }
 
-// 🔧 시간 처리 함수들 (신 버전만)
+const generateHourOptions = () => {
+  return Array.from({ length: 24 }, (_, i) => ({
+    value: `${String(i).padStart(2, '0')}:00`,
+    label: `${i}시`
+  }));
+};
+
 const formatTime = (timeString: string): string => {
   if (!timeString) return '';
-  const [hours, minutes] = timeString.split(':');
-  return `${hours}:${minutes}`;
+  const [hours] = timeString.split(':');
+  return `${parseInt(hours)}시`;
 };
 
 const parseScheduleData = (scheduleData: any) => {
@@ -72,9 +72,15 @@ export default function FreelancerSchedulesPage() {
     onlyRegistered: false
   });
 
+  const [memoModalOpen, setMemoModalOpen] = useState(false);
+  const [selectedMemo, setSelectedMemo] = useState('');
+
+  const [editingCell, setEditingCell] = useState<{scheduleId: number, dayKey: string} | null>(null);
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+
   const { currentWeek, navigateWeek } = useWeek();
 
-  // 🔧 월요일 시작 주차 계산
   const getMonday = (date: Date): Date => {
     const d = new Date(date);
     const day = d.getDay();
@@ -86,16 +92,7 @@ export default function FreelancerSchedulesPage() {
     try {
       const inputDate = dateInput ? new Date(dateInput) : new Date();
       const monday = getMonday(inputDate);
-      const result = monday.toISOString().split('T')[0];
-      
-      console.log('월요일 계산:', {
-        입력: inputDate.toLocaleDateString() + ' (' + ['일', '월', '화', '수', '목', '금', '토'][inputDate.getDay()] + ')',
-        계산된_월요일: result,
-        월요일_확인: new Date(result).toLocaleDateString() + ' (' + ['일', '월', '화', '수', '목', '금', '토'][new Date(result).getDay()] + ')',
-        월요일_맞나: new Date(result).getDay() === 1 ? '✅ 맞음' : '❌ 틀림'
-      });
-      
-      return result;
+      return monday.toISOString().split('T')[0];
     } catch (error) {
       console.error('날짜 계산 오류:', error);
       return new Date().toISOString().split('T')[0];
@@ -114,7 +111,6 @@ export default function FreelancerSchedulesPage() {
     }
   };
 
-  // 🔧 날짜 범위 포맷팅
   const formatWeekRange = (start: string, end: string): string => {
     try {
       const startDate = new Date(start);
@@ -131,25 +127,6 @@ export default function FreelancerSchedulesPage() {
   };
 
   useEffect(() => {
-  const checkAuth = async () => {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
-    console.log('🔍 현재 사용자 JWT 토큰 분석:', {
-      이메일: user?.email,
-      user_id: user?.id,
-      app_metadata: user?.app_metadata,
-      role_in_metadata: user?.app_metadata?.role,
-      roles_in_metadata: user?.app_metadata?.roles,
-      raw_app_metadata: JSON.stringify(user?.app_metadata, null, 2)
-    });
-  };
-  
-  checkAuth();
-}, []);
-
-
-  // currentWeek 변경 시 날짜 업데이트
-  useEffect(() => {
     const weekStart = calculateWeekStart(currentWeek);
     const weekEnd = calculateWeekEnd(weekStart);
     
@@ -157,26 +134,22 @@ export default function FreelancerSchedulesPage() {
     setWeekRange({ start: weekStart, end: weekEnd });
   }, [currentWeek]);
 
-  // 주차가 변경될 때마다 스케줄 재조회
   useEffect(() => {
     if (currentWeekStart && freelancers.length > 0) {
       fetchSchedules();
     }
   }, [currentWeekStart]);
 
-  // 컴포넌트 마운트 시 프리랜서 먼저 로드
   useEffect(() => {
     fetchFreelancers();
   }, []);
 
-  // 프리랜서 로드 완료 후 스케줄 조회
   useEffect(() => {
     if (freelancers.length > 0 && currentWeekStart) {
       fetchSchedules();
     }
   }, [freelancers]);
 
-  // 필터 변경 시 로컬 필터링
   useEffect(() => {
     applyFilters();
   }, [filters, allSchedules, freelancers]);
@@ -213,11 +186,6 @@ export default function FreelancerSchedulesPage() {
 
       setFreelancers(freelancerUsers);
       
-      console.log('프리랜서 로드:', {
-        총_프리랜서: freelancerUsers.length,
-        샘플: freelancerUsers.slice(0, 2).map(f => f.name)
-      });
-      
     } catch (error) {
       console.error('프리랜서 조회 오류:', error);
       setFreelancers([]);
@@ -231,11 +199,6 @@ export default function FreelancerSchedulesPage() {
     try {
       setLoading(true);
       
-      console.log('스케줄 조회:', {
-        주차: currentWeekStart,
-        월요일_확인: new Date(currentWeekStart).toLocaleDateString() + ' (' + ['일', '월', '화', '수', '목', '금', '토'][new Date(currentWeekStart).getDay()] + ')'
-      });
-      
       const { data, error } = await supabase
         .from('shooter_weekly_schedule')
         .select('*')
@@ -243,11 +206,6 @@ export default function FreelancerSchedulesPage() {
         .order('submitted_at', { ascending: false });
 
       if (error) throw error;
-
-      console.log('스케줄 조회 결과:', {
-        주차: currentWeekStart,
-        개수: data?.length || 0
-      });
       
       const schedulesWithShooterInfo = (data || []).map(schedule => {
         const freelancer = freelancers.find(f => f.auth_id === schedule.shooter_id);
@@ -286,7 +244,78 @@ export default function FreelancerSchedulesPage() {
     setSchedules(filtered);
   };
 
-  // 🔧 프리랜서 그리드 렌더링 (신 버전 시간 범위 + 전달사항)
+  const openMemoModal = (memo: string) => {
+    setSelectedMemo(memo);
+    setMemoModalOpen(true);
+  };
+
+  const closeMemoModal = () => {
+    setMemoModalOpen(false);
+    setSelectedMemo('');
+  };
+
+  const startEditingTime = (scheduleId: number, dayKey: string, startTime: string, endTime: string) => {
+    setEditingCell({ scheduleId, dayKey });
+    setEditStartTime(startTime);
+    setEditEndTime(endTime);
+  };
+
+  const cancelEditingTime = () => {
+    setEditingCell(null);
+    setEditStartTime('');
+    setEditEndTime('');
+  };
+
+  const saveTimeEdit = async (scheduleId: number, dayKey: string) => {
+    if (!editStartTime || !editEndTime) {
+      alert('시작 시간과 종료 시간을 모두 선택하세요');
+      return;
+    }
+
+    if (editStartTime >= editEndTime) {
+      alert('종료 시간은 시작 시간보다 늦어야 합니다');
+      return;
+    }
+
+    try {
+      const schedule = allSchedules.find(s => s.id === scheduleId);
+      if (!schedule) return;
+
+      const scheduleData = parseScheduleData(schedule.schedule_data);
+      if (!scheduleData) return;
+
+      scheduleData[dayKey] = {
+        ...scheduleData[dayKey],
+        startTime: editStartTime,
+        endTime: editEndTime
+      };
+
+      const { error } = await supabase
+        .from('shooter_weekly_schedule')
+        .update({
+          schedule_data: scheduleData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', scheduleId);
+
+      if (error) {
+        console.error('시간 수정 실패:', error);
+        alert('시간 수정에 실패했습니다');
+        return;
+      }
+
+      alert('시간이 성공적으로 수정되었습니다');
+      setEditingCell(null);
+      fetchSchedules();
+      
+    } catch (error) {
+      console.error('시간 수정 오류:', error);
+      alert('시간 수정 중 오류가 발생했습니다');
+    }
+  };
+
+  const hourOptions = generateHourOptions();
+
   const renderFreelancerGrid = () => {
     let displayFreelancers = filters.freelancer === 'all' 
       ? freelancers 
@@ -323,246 +352,365 @@ export default function FreelancerSchedulesPage() {
     }
 
     return (
-      <div style={{
-        background: '#ffffff',
-        border: '1px solid #e2e8f0',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        fontSize: '13px',
-        marginBottom: '20px'
-      }}>
-        {/* 헤더 */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '220px repeat(7, 1fr)', // 🔧 전달사항 공간 확보
-          background: '#1e293b',
-          color: 'white'
-        }}>
+      <>
+        <style jsx>{`
+          .grid-container {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          
+          @media (max-width: 768px) {
+            .grid-container {
+              margin: 0 -16px;
+            }
+          }
+        `}</style>
+        
+        <div className="grid-container">
           <div style={{
-            padding: '12px 16px',
-            fontWeight: 'bold',
-            fontSize: '14px',
-            borderRight: '1px solid rgba(255,255,255,0.2)'
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            fontSize: '13px',
+            marginBottom: '20px',
+            minWidth: '900px'
           }}>
-            프리랜서 ({displayFreelancers.length}명)
-          </div>
-          {DAY_ORDER.map((dayKey, index) => (
-            <div key={dayKey} style={{
-              padding: '12px 8px',
-              textAlign: 'center',
-              fontWeight: 'bold',
-              fontSize: '14px',
-              borderRight: index < DAY_ORDER.length - 1 ? '1px solid rgba(255,255,255,0.2)' : 'none'
-            }}>
-              {DAY_NAMES[dayKey as keyof typeof DAY_NAMES]}
-            </div>
-          ))}
-        </div>
-
-        {/* 프리랜서 행들 */}
-        {displayFreelancers.map((freelancer, freelancerIndex) => {
-          const schedule = schedules.find(s => {
-            const isAuthIdMatch = s.shooter_id === freelancer.auth_id;
-            const isWeekMatch = s.week_start_date === currentWeekStart;
-            return isAuthIdMatch && isWeekMatch;
-          });
-          
-          const hasSchedule = !!schedule;
-          const isAllUnavailable = schedule?.is_all_unavailable || false;
-          
-          return (
-            <div key={freelancer.id} style={{
+            {/* 헤더 */}
+            <div style={{
               display: 'grid',
-              gridTemplateColumns: '220px repeat(7, 1fr)', // 🔧 너비 증가
-              borderBottom: freelancerIndex < displayFreelancers.length - 1 ? '1px solid #e2e8f0' : 'none',
-              backgroundColor: freelancerIndex % 2 === 0 ? '#ffffff' : '#f8fafc',
-              minHeight: '80px' // 🔧 높이 증가
+              gridTemplateColumns: '220px repeat(7, 1fr)',
+              background: '#1e293b',
+              color: 'white'
             }}>
-              {/* 🔧 프리랜서 정보 셀 (전달사항 포함) */}
               <div style={{
-                padding: '8px 12px',
-                borderRight: '1px solid #e2e8f0',
-                background: hasSchedule ? '#ecfdf5' : '#fef2f2',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center'
+                padding: '12px 16px',
+                fontWeight: 'bold',
+                fontSize: '14px',
+                borderRight: '1px solid rgba(255,255,255,0.2)'
               }}>
-                {/* 이름과 상태 */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '4px'
-                }}>
-                  <span style={{
-                    fontWeight: 'bold',
-                    fontSize: '15px',
-                    color: '#1e293b'
-                  }}>
-                    {freelancer.name}
-                  </span>
-                  
-                  <span style={{
-                    fontSize: '10px',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    background: hasSchedule ? '#ecfdf5' : '#fee2e2',
-                    color: hasSchedule ? '#059669' : '#dc2626',
-                    fontWeight: 'bold'
-                  }}>
-                    {hasSchedule ? '등록' : '미등록'}
-                  </span>
-                </div>
-
-                {/* 전화번호 */}
-                <div style={{
-                  fontSize: '11px',
-                  color: '#64748b',
-                  marginBottom: '4px'
-                }}>
-                  {freelancer.phone}
-                </div>
-
-                {/* 🔧 전달사항 표시 (한 줄로) */}
-                {schedule?.message && schedule.message.trim() && (
-                  <div style={{
-                    fontSize: '10px',
-                    color: '#0369a1',
-                    background: '#dbeafe',
-                    padding: '4px 6px',
-                    borderRadius: '4px',
-                    border: '1px solid #93c5fd',
-                    marginTop: '2px',
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    lineHeight: '1.2'
-                  }}>
-                    💬 {schedule.message}
-                  </div>
-                )}
+                프리랜서 ({displayFreelancers.length}명)
               </div>
+              {DAY_ORDER.map((dayKey, index) => (
+                <div key={dayKey} style={{
+                  padding: '12px 8px',
+                  textAlign: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  borderRight: index < DAY_ORDER.length - 1 ? '1px solid rgba(255,255,255,0.2)' : 'none'
+                }}>
+                  {DAY_NAMES[dayKey as keyof typeof DAY_NAMES]}
+                </div>
+              ))}
+            </div>
 
-              {/* 🔧 요일별 시간 범위 표시 (신 버전만) */}
-              {DAY_ORDER.map((dayKey, dayIndex) => {
-                const parsedSchedule = parseScheduleData(schedule?.schedule_data);
-                const daySchedule = parsedSchedule?.[dayKey];
-                
-                const cellStyle = {
-                  padding: '8px 4px',
-                  borderRight: dayIndex < DAY_ORDER.length - 1 ? '1px solid #e2e8f0' : 'none',
-                  minHeight: '80px',
-                  display: 'flex',
-                  flexDirection: 'column' as const,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  fontSize: '10px'
-                };
-
-                // 전체 불가능
-                if (isAllUnavailable) {
-                  return (
-                    <div key={dayKey} style={{
-                      ...cellStyle,
-                      background: '#fee2e2'
-                    }}>
-                      <div style={{
-                        color: '#dc2626',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        textAlign: 'center',
-                        padding: '4px',
-                        background: '#ffffff',
-                        borderRadius: '4px',
-                        border: '1px solid #dc2626'
-                      }}>
-                        전체불가
-                      </div>
-                    </div>
-                  );
-                }
-
-                // 스케줄 미등록
-                if (!hasSchedule || !daySchedule) {
-                  return (
-                    <div key={dayKey} style={{
-                      ...cellStyle,
-                      background: '#f9fafb'
-                    }}>
-                      <div style={{
-                        color: '#9ca3af',
-                        fontSize: '10px',
-                        textAlign: 'center',
-                        padding: '4px',
-                        background: '#ffffff',
-                        borderRadius: '4px',
-                        border: '1px dashed #d1d5db'
-                      }}>
-                        미등록
-                      </div>
-                    </div>
-                  );
-                }
-
-                // 🔧 신 버전 처리 (available, startTime, endTime)
-                const isAvailable = daySchedule.available;
-                const startTime = daySchedule.startTime;
-                const endTime = daySchedule.endTime;
-
-                // 해당 요일 불가능
-                if (!isAvailable) {
-                  return (
-                    <div key={dayKey} style={{
-                      ...cellStyle,
-                      background: '#fee2e2'
-                    }}>
-                      <div style={{
-                        color: '#dc2626',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        textAlign: 'center',
-                        padding: '4px',
-                        background: '#ffffff',
-                        borderRadius: '4px',
-                        border: '1px solid #dc2626'
-                      }}>
-                        불가
-                      </div>
-                    </div>
-                  );
-                }
-
-                // 🔧 시간 범위 표시
-                return (
-                  <div key={dayKey} style={{
-                    ...cellStyle,
-                    background: '#ffffff'
+            {/* 프리랜서 행들 */}
+            {displayFreelancers.map((freelancer, freelancerIndex) => {
+              const schedule = schedules.find(s => {
+                const isAuthIdMatch = s.shooter_id === freelancer.auth_id;
+                const isWeekMatch = s.week_start_date === currentWeekStart;
+                return isAuthIdMatch && isWeekMatch;
+              });
+              
+              const hasSchedule = !!schedule;
+              const isAllUnavailable = schedule?.is_all_unavailable || false;
+              
+              return (
+                <div key={freelancer.id} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '220px repeat(7, 1fr)',
+                  borderBottom: freelancerIndex < displayFreelancers.length - 1 ? '1px solid #e2e8f0' : 'none',
+                  backgroundColor: freelancerIndex % 2 === 0 ? '#ffffff' : '#f8fafc',
+                  minHeight: '70px'
+                }}>
+                  {/* 프리랜서 정보 셀 */}
+                  <div style={{
+                    padding: '8px 10px',
+                    borderRight: '1px solid #e2e8f0',
+                    background: hasSchedule ? '#ecfdf5' : '#fef2f2',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center'
                   }}>
                     <div style={{
-                      fontSize: '11px',
-                      padding: '4px 6px',
-                      background: '#dcfce7',
-                      color: '#166534',
-                      borderRadius: '4px',
-                      fontWeight: 'bold',
-                      border: '1px solid #10b981',
-                      whiteSpace: 'nowrap',
-                      textAlign: 'center'
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '4px'
                     }}>
-                      {formatTime(startTime)}~{formatTime(endTime)}
+                      <span style={{
+                        fontWeight: 'bold',
+                        fontSize: '15px',
+                        color: '#1e293b'
+                      }}>
+                        {freelancer.name}
+                      </span>
+                      
+                      <span style={{
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: hasSchedule ? '#ecfdf5' : '#fee2e2',
+                        color: hasSchedule ? '#059669' : '#dc2626',
+                        fontWeight: 'bold'
+                      }}>
+                        {hasSchedule ? '등록' : '미등록'}
+                      </span>
                     </div>
+
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#64748b',
+                      marginBottom: '4px'
+                    }}>
+                      {freelancer.phone}
+                    </div>
+
+                    {schedule?.message && schedule.message.trim() && (
+                      <button
+                        onClick={() => openMemoModal(schedule.message!)}
+                        style={{
+                          fontSize: '10px',
+                          color: '#0369a1',
+                          background: '#dbeafe',
+                          padding: '4px 6px',
+                          borderRadius: '4px',
+                          border: '1px solid #93c5fd',
+                          marginTop: '2px',
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.2',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        💬 {schedule.message}
+                      </button>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
+
+                  {/* 요일별 셀 */}
+                  {DAY_ORDER.map((dayKey, dayIndex) => {
+                    const parsedSchedule = parseScheduleData(schedule?.schedule_data);
+                    const daySchedule = parsedSchedule?.[dayKey];
+                    const isEditing = editingCell?.scheduleId === schedule?.id && editingCell?.dayKey === dayKey;
+                    
+                    const cellStyle = {
+                      padding: '8px 6px',
+                      borderRight: dayIndex < DAY_ORDER.length - 1 ? '1px solid #e2e8f0' : 'none',
+                      minHeight: '70px',
+                      display: 'flex',
+                      flexDirection: 'column' as const,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      fontSize: '11px',
+                      gap: '4px'
+                    };
+
+                    // 전체 불가능
+                    if (isAllUnavailable) {
+                      return (
+                        <div key={dayKey} style={{
+                          ...cellStyle,
+                          background: '#fee2e2'
+                        }}>
+                          <div style={{
+                            color: '#dc2626',
+                            fontSize: '13px',
+                            fontWeight: 'bold'
+                          }}>
+                            전체불가
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 스케줄 미등록
+                    if (!hasSchedule || !daySchedule) {
+                      return (
+                        <div key={dayKey} style={{
+                          ...cellStyle,
+                          background: '#f9fafb'
+                        }}>
+                          <div style={{
+                            color: '#9ca3af',
+                            fontSize: '12px'
+                          }}>
+                            -
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const isAvailable = daySchedule.available;
+                    const startTime = daySchedule.startTime;
+                    const endTime = daySchedule.endTime;
+
+                    // 해당 요일 불가능
+                    if (!isAvailable) {
+                      return (
+                        <div key={dayKey} style={{
+                          ...cellStyle,
+                          background: '#fee2e2'
+                        }}>
+                          <div style={{
+                            color: '#dc2626',
+                            fontSize: '13px',
+                            fontWeight: 'bold'
+                          }}>
+                            불가
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 시간 수정 모드
+                    if (isEditing) {
+                      return (
+                        <div key={dayKey} style={{
+                          ...cellStyle,
+                          background: '#fffbeb',
+                          padding: '6px'
+                        }}>
+                          {/* 시간 선택 (가로 배치) */}
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginBottom: '6px'
+                          }}>
+                            <select
+                              value={editStartTime}
+                              onChange={(e) => setEditStartTime(e.target.value)}
+                              style={{
+                                flex: '1',
+                                padding: '5px',
+                                fontSize: '11px',
+                                border: '2px solid #d97706',
+                                borderRadius: '4px',
+                                background: 'white',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {hourOptions.map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            
+                            <span style={{ 
+                              fontSize: '12px', 
+                              color: '#64748b',
+                              fontWeight: 'bold'
+                            }}>~</span>
+                            
+                            <select
+                              value={editEndTime}
+                              onChange={(e) => setEditEndTime(e.target.value)}
+                              style={{
+                                flex: '1',
+                                padding: '5px',
+                                fontSize: '11px',
+                                border: '2px solid #d97706',
+                                borderRadius: '4px',
+                                background: 'white',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {hourOptions.map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          {/* 버튼 (가로 배치) */}
+                          <div style={{ 
+                            display: 'flex', 
+                            gap: '4px'
+                          }}>
+                            <button
+                              onClick={() => saveTimeEdit(schedule!.id, dayKey)}
+                              style={{
+                                flex: '1',
+                                padding: '5px',
+                                fontSize: '10px',
+                                background: '#10b981',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              수정
+                            </button>
+                            <button
+                              onClick={cancelEditingTime}
+                              style={{
+                                flex: '1',
+                                padding: '5px',
+                                fontSize: '10px',
+                                background: '#64748b',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // 일반 표시
+                    return (
+                      <div key={dayKey} style={{
+                        ...cellStyle,
+                        background: '#ffffff'
+                      }}>
+                        <div style={{
+                          fontSize: '14px',
+                          fontWeight: 'bold',
+                          color: '#059669'
+                        }}>
+                          {formatTime(startTime)} ~ {formatTime(endTime)}
+                        </div>
+                        <button
+                          onClick={() => startEditingTime(schedule!.id, dayKey, startTime, endTime)}
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: '10px',
+                            background: '#3b82f6',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          수정
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </>
     );
   };
 
-  // 통계 계산
+
   const getStatistics = () => {
     let displayFreelancers = filters.freelancer === 'all' 
       ? freelancers 
@@ -887,9 +1035,81 @@ export default function FreelancerSchedulesPage() {
         </div>
       )}
       
-
       {/* 프리랜서 그리드 */}
       {!loading && renderFreelancerGrid()}
+
+      {/* 메모 모달 */}
+      {memoModalOpen && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px'
+          }}
+          onClick={closeMemoModal}
+        >
+          <div 
+            style={{
+              background: 'white',
+              borderRadius: '8px',
+              padding: '24px',
+              maxWidth: '600px',
+              width: '100%',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{
+              fontSize: '20px',
+              fontWeight: 'bold',
+              marginBottom: '16px',
+              color: '#1e293b'
+            }}>
+              전달사항
+            </h2>
+            <div style={{
+              background: '#f8fafc',
+              padding: '16px',
+              borderRadius: '6px',
+              border: '1px solid #e2e8f0',
+              maxHeight: '400px',
+              overflowY: 'auto',
+              marginBottom: '16px'
+            }}>
+              <p style={{
+                whiteSpace: 'pre-wrap',
+                margin: 0,
+                color: '#475569',
+                lineHeight: '1.6'
+              }}>
+                {selectedMemo}
+              </p>
+            </div>
+            <button
+              onClick={closeMemoModal}
+              style={{
+                padding: '10px 20px',
+                background: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                alignSelf: 'flex-end'
+              }}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
