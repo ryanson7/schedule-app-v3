@@ -1623,54 +1623,54 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
       }
     };
 
-  const handleApproveCancellation = async () => {
-    const confirmApprove = confirm(
-      `${formData.professor_name} 교수님의 취소 요청을 승인하시겠습니까?\n\n` +
-      `승인 후 스케줄이 완전히 취소됩니다.`
-    );
+const handleApproveCancellation = async () => {
+  const confirmApprove = confirm(
+    `${formData.professor_name} 교수님의 취소 요청을 승인하시겠습니까?\n\n` +
+    `승인 후 스케줄이 완전히 취소됩니다.`
+  );
 
-    if (!confirmApprove) return;
+  if (!confirmApprove) return;
 
-    setSaving(true);
-    try {
-      const adminName = localStorage.getItem('userName') || 'Unknown User';
-      
-      const { error } = await supabase
-        .from('schedules')
-        .update({
-          approval_status: 'cancelled',
-          is_active: false,
-          cancellation_reason: `취소 승인 완료 (승인자: ${adminName})`
-        })
-        .eq('id', initialData.scheduleData.id);
-      
-      if (error) throw error;
-      
-      await supabase
-        .from('schedule_history')
-        .insert({
-          schedule_id: initialData.scheduleData.id,
-          change_type: 'approved',
-          changed_by: parseInt(localStorage.getItem('userId') || '0'),
-          description: `취소 승인 처리 완료 (승인자: ${adminName})`,
-          old_value: JSON.stringify(initialData.scheduleData),
-          new_value: JSON.stringify({
-            ...initialData.scheduleData,
-            approval_status: 'cancelled'
-          }),
-          created_at: new Date().toISOString(),
-          changed_at: new Date().toISOString()
-        });
-      
-      alert('취소 요청이 승인되었습니다.');
-      onClose();
-    } catch (error) {
-      console.error('취소 승인 처리 오류:', error);
-      alert('취소 승인 처리 중 오류가 발생했습니다.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  setSaving(true);
+  try {
+    const adminName = localStorage.getItem('userName') || 'Unknown User';
+    
+    const { error } = await supabase
+      .from('schedules')
+      .update({
+        approval_status: 'cancelled',
+        is_active: false,
+        cancellation_reason: `취소 승인 완료 (승인자: ${adminName})`
+      })
+      .eq('id', initialData.scheduleData.id);
+    
+    if (error) throw error;
+    
+    // ✅ schedule_history로 수정
+    await supabase
+      .from('schedule_history')
+      .insert({
+        schedule_id: initialData.scheduleData.id,
+        change_type: 'cancelled',
+        changed_by: parseInt(localStorage.getItem('userId') || '0'),
+        description: `취소 승인 처리 완료 (승인자: ${adminName})`,
+        old_value: JSON.stringify(initialData.scheduleData),
+        new_value: JSON.stringify({
+          ...initialData.scheduleData,
+          approval_status: 'cancelled'
+        }),
+        created_at: new Date().toISOString()
+      });
+    
+    alert('취소 요청이 승인되었습니다.');
+    onClose();
+  } catch (error) {
+    console.error('취소 승인 처리 오류:', error);
+    alert('취소 승인 처리 중 오류가 발생했습니다.');
+  } finally {
+    setSaving(false);
+  }
+};
 
   const handleSave = async (action: 'temp' | 'request' | 'approve'|'cancel_approve') => {
     if (userIdLoading) {
@@ -1683,44 +1683,44 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
       return;
     }
 
-    if (action === 'cancel_approve') {
-      const scheduleId = initialData.scheduleData.id;
+if (action === 'cancel_approve') {
+  const scheduleId = initialData.scheduleData.id;
 
-      const { error } = await supabase
-        .from('schedules')
-        .update({
-          approval_status: 'cancelled',
-          is_active: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', scheduleId);
+  const { error } = await supabase
+    .from('schedules')
+    .update({
+      approval_status: 'cancelled',
+      is_active: false,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', scheduleId);
 
-      const adminName = localStorage.getItem('userName') || 
-                       localStorage.getItem('displayName') || 
-                       'Unknown User';
+  const adminName = localStorage.getItem('userName') || 
+                   localStorage.getItem('displayName') || 
+                   'Unknown User';
 
-      if (error) throw error;
-      
-      await supabase
-        .from('schedule_history')
-        .insert({
-          schedule_id: scheduleId,
-          change_type: 'cancelled',
-          changed_by: parseInt(localStorage.getItem('userId') || '0'),
-          description: `관리자 직권 취소: ${adminName}이 직접 취소 처리`,
-          old_value: JSON.stringify(initialData.scheduleData),
-          new_value: JSON.stringify({
-            ...initialData.scheduleData,
-            approval_status: 'cancelled'
-          }),
-          created_at: new Date().toISOString(),
-          changed_at: new Date().toISOString()
-        });
+  if (error) throw error;
+  
+  // ✅ schedule_history로 수정
+  await supabase
+    .from('schedule_history')
+    .insert({
+      schedule_id: scheduleId,
+      change_type: 'cancelled',
+      changed_by: parseInt(localStorage.getItem('userId') || '0'),
+      description: `관리자 직권 취소: ${adminName}이 직접 취소 처리`,
+      old_value: JSON.stringify(initialData.scheduleData),
+      new_value: JSON.stringify({
+        ...initialData.scheduleData,
+        approval_status: 'cancelled'
+      }),
+      created_at: new Date().toISOString()
+    });
 
-      await onSave({ scheduleId }, 'cancel_approve');
-      onClose();
-      return;
-    }
+  await onSave({ scheduleId }, 'cancel_approve');
+  onClose();
+  return;
+}
 
     if (isEditMode && action !== 'approve') {
       const canEdit = SchedulePolicy.canEditOnline();

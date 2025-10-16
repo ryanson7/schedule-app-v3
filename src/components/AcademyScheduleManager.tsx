@@ -1339,28 +1339,33 @@ const recordScheduleHistory = async (
     return (academyColors as any)[academyId] || academyColors.default;
   };
 
-  const getScheduleForCell = (date: string, location: any) => {
-    try {
-      const cellSchedules = schedules.filter(s => {
-        const matchesDate = s.shoot_date === date;
-        const matchesLocation = s.sub_location_id === location.id;
-        return matchesDate && matchesLocation;
-      });
-      
-      console.log('🔧 셀 스케줄 조회:', {
-        date,
-        locationId: location.id,
-        totalSchedules: schedules.length,
-        cellSchedules: cellSchedules.length,
-        cancelledCount: cellSchedules.filter(s => s.approval_status === 'cancelled').length
-      });
-      
-      return cellSchedules;
-    } catch (error) {
-      console.error('셀 스케줄 조회 오류:', error);
-      return [];
-    }
-  };
+ const getScheduleForCell = (date: string, location: any) => {
+  try {
+    const cellSchedules = schedules.filter(s => {
+      const matchesDate = s.shoot_date === date;
+      const matchesLocation = s.sub_location_id === location.id;
+      return matchesDate && matchesLocation;
+    });
+    
+    // ✅ 로그 제거 (성능 최적화)
+    // 개발 중에만 필요하면 아래 주석 해제
+    /*
+    console.log('🔧 셀 스케줄 조회:', {
+      date,
+      locationId: location.id,
+      totalSchedules: schedules.length,
+      cellSchedules: cellSchedules.length,
+      cancelledCount: cellSchedules.filter(s => s.approval_status === 'cancelled').length
+    });
+    */
+    
+    return cellSchedules;
+  } catch (error) {
+    console.error('셀 스케줄 조회 오류:', error);
+    return [];
+  }
+};
+
 
   // 🔥 handleCellClick 함수 - 빈 셀 클릭 시만 새 등록
   const handleCellClick = (date: string, location: any) => {
