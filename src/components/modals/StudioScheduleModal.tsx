@@ -4,6 +4,18 @@ import { supabase } from '../../utils/supabaseClient';
 import { SchedulePolicy } from '../../utils/schedulePolicy';
 import { ProfessorAutocomplete } from '../ProfessorAutocomplete';
 
+const getUserNumericId = (): number => {
+  const numericId = localStorage.getItem('userNumericId');
+  const parsed = parseInt(numericId || '0', 10);
+  
+  if (isNaN(parsed) || parsed === 0) {
+    console.warn('⚠️ userNumericId가 유효하지 않습니다. 재로그인 필요.');
+    return 0;
+  }
+  
+  return parsed;
+};
+
 interface StudioScheduleModalProps {
   open: boolean;
   onClose: () => void;
@@ -939,7 +951,7 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
       .insert({
         schedule_id: scheduleId,
         change_type: 'split',
-        changed_by: parseInt(localStorage.getItem('userId') || '0'),
+        changed_by: getUserNumericId(),
         description: `스케줄 ${segments.length}개로 분할 (사유: ${reason})`,
         old_value: JSON.stringify({ 
           start_time: originalSchedule.start_time, 
@@ -1652,7 +1664,7 @@ const handleApproveCancellation = async () => {
       .insert({
         schedule_id: initialData.scheduleData.id,
         change_type: 'cancelled',
-        changed_by: parseInt(localStorage.getItem('userId') || '0'),
+        changed_by: getUserNumericId(),
         description: `취소 승인 처리 완료 (승인자: ${adminName})`,
         old_value: JSON.stringify(initialData.scheduleData),
         new_value: JSON.stringify({
@@ -1707,7 +1719,7 @@ if (action === 'cancel_approve') {
     .insert({
       schedule_id: scheduleId,
       change_type: 'cancelled',
-      changed_by: parseInt(localStorage.getItem('userId') || '0'),
+      changed_by: getUserNumericId(),
       description: `관리자 직권 취소: ${adminName}이 직접 취소 처리`,
       old_value: JSON.stringify(initialData.scheduleData),
       new_value: JSON.stringify({

@@ -36,19 +36,20 @@ export default async function handler(req: NextRequest) {
     
     const naverWorksUrl = 'https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message';
     
+    // ✅ 타임아웃 20초로 연장
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 10000);  // 10초 타임아웃
+    }, 20000);  // 20초
 
     try {
       const response = await fetch(naverWorksUrl, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json; charset=utf-8',  // ✅ charset 명시
+          'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ text: message }),  // ✅ JavaScript가 UTF-8로 자동 변환
+        body: JSON.stringify({ text: message }),
         signal: controller.signal
       });
 
