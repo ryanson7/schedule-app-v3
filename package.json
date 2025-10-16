@@ -17,7 +17,11 @@
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "analyze": "cross-env ANALYZE=true next build",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "echo \"No tests specified\" && exit 0",
+    
+    "pages:build": "npx @cloudflare/next-on-pages",
+    "preview": "npm run pages:build && wrangler pages dev",
+    "deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.8.0",
@@ -53,6 +57,7 @@
     "eslint": "8.57.1",
     "eslint-config-next": "15.4.6",
     "rimraf": "^5.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
   }
 }

@@ -1,29 +1,37 @@
+// ✅ Edge Runtime용 import
+import { NextRequest, NextResponse } from 'next/server';
+
 export const config = {
   runtime: 'edge',
 };
-
-import type { NextApiRequest, NextApiResponse } from 'next';
 
 interface MessageRequest {
   type: string;
   message: string;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+export default async function handler(req: NextRequest) {
+  // ✅ CORS 헤더
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
+  // OPTIONS 요청 처리
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return new NextResponse(null, { 
+      status: 200, 
+      headers: corsHeaders 
+    });
   }
 
+  // POST 요청만 허용
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return NextResponse.json(
+      { error: 'Method not allowed' },
+      { status: 405, headers: corsHeaders }
+    );
   }
 
   const debugLog: any = {
@@ -33,7 +41,9 @@ export default async function handler(
   };
 
   try {
-    const { type, message }: MessageRequest = req.body;
+    // ✅ Edge Runtime에서 body 읽기
+    const body = await req.json() as MessageRequest;
+    const { type, message } = body;
     
     debugLog.messageType = type;
     debugLog.messageLength = message?.length || 0;
@@ -44,7 +54,7 @@ export default async function handler(
     
     console.log('📡 요청 URL:', naverWorksUrl);
 
-    // Edge Runtime에서는 AbortController 사용 가능
+    // AbortController
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       console.error('⏱️ 타임아웃 발생! (50초 초과)');
@@ -82,12 +92,15 @@ export default async function handler(
         
         console.error('❌ API 오류 응답:', errorText);
 
-        return res.status(200).json({
-          success: false,
-          warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
-          debug: debugLog,
-          error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`
-        });
+        return NextResponse.json(
+          {
+            success: false,
+            warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
+            debug: debugLog,
+            error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`
+          },
+          { status: 200, headers: corsHeaders }
+        );
       }
 
       const data = await response.json();
@@ -96,12 +109,15 @@ export default async function handler(
       console.log('✅ 메시지 발송 성공!');
       console.log('📈 전체 디버그 정보:', JSON.stringify(debugLog, null, 2));
 
-      return res.status(200).json({
-        success: true,
-        message: '메시지 발송 완료',
-        debug: debugLog,
-        data: data
-      });
+      return NextResponse.json(
+        {
+          success: true,
+          message: '메시지 발송 완료',
+          debug: debugLog,
+          data: data
+        },
+        { headers: corsHeaders }
+      );
 
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
@@ -127,13 +143,16 @@ export default async function handler(
 
       console.error('📊 전체 디버그 정보:', JSON.stringify(debugLog, null, 2));
 
-      return res.status(200).json({
-        success: false,
-        warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
-        debug: debugLog,
-        error: fetchError.message,
-        errorType: debugLog.errorType
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
+          debug: debugLog,
+          error: fetchError.message,
+          errorType: debugLog.errorType
+        },
+        { status: 200, headers: corsHeaders }
+      );
     }
 
   } catch (error: any) {
@@ -145,11 +164,14 @@ export default async function handler(
     console.error('❌ 전체 오류:', error);
     console.error('📊 디버그 정보:', JSON.stringify(debugLog, null, 2));
 
-    return res.status(200).json({
-      success: false,
-      warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
-      debug: debugLog,
-      error: error.message
-    });
+    return NextResponse.json(
+      {
+        success: false,
+        warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
+        debug: debugLog,
+        error: error.message
+      },
+      { status: 200, headers: corsHeaders }
+    );
   }
 }
