@@ -448,7 +448,6 @@ const fetchAllSchedules = async () => {
     const startDate = weekDates[0].date;
     const endDate = weekDates[6].date;
 
-    // ✅ 수정된 부분: location 정보를 올바르게 조회
     const { data: studioAcademyData, error: scheduleError } = await supabase
       .from('schedules')
       .select(`
@@ -465,7 +464,7 @@ const fetchAllSchedules = async () => {
         )
       `)
       .in('schedule_type', ['studio', 'academy'])
-      .eq('is_active', true)
+      .eq('is_active', true)  // ✅ 활성화된 것만
       .eq('approval_status', 'approved')
       .gte('shoot_date', startDate)
       .lte('shoot_date', endDate)
@@ -477,10 +476,37 @@ const fetchAllSchedules = async () => {
       throw scheduleError;
     }
 
-    console.log('✅ 스튜디오/아카데미 스케줄 조회:', studioAcademyData?.length || 0);
+    // ✅ 분할 스케줄 필터링 추가
+    const filteredSchedules = (studioAcademyData || []).filter(schedule => {
+      // 분할 안된 일반 스케줄
+      if (!schedule.parent_schedule_id && !schedule.is_split) {
+        return true;
+      }
+      
+      // ✅ 분할된 원본 (교수 관점 유지)
+      if (schedule.is_split === true && !schedule.parent_schedule_id) {
+        return true;
+      }
+      
+      // ❌ 분할 자식은 제외 (중복 방지)
+      if (schedule.parent_schedule_id) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    console.log('📊 분할 스케줄 필터링:', {
+      전체: studioAcademyData?.length || 0,
+      표시: filteredSchedules.length,
+      분할자식제외: (studioAcademyData?.length || 0) - filteredSchedules.length
+    });
+
+    console.log('✅ 스튜디오/아카데미 스케줄 조회:', filteredSchedules.length);
     
-    if (studioAcademyData && studioAcademyData.length > 0) {
-      const shooterIds = studioAcademyData
+    // ✅ 촬영자 정보 조회
+    if (filteredSchedules.length > 0) {
+      const shooterIds = filteredSchedules
         .map(s => s.assigned_shooter_id)
         .filter(Boolean);
         
@@ -491,7 +517,7 @@ const fetchAllSchedules = async () => {
           .in('id', shooterIds);
           
         if (!shooterError && assignedShooters) {
-          studioAcademyData.forEach(schedule => {
+          filteredSchedules.forEach(schedule => {
             if (schedule.assigned_shooter_id) {
               const shooter = assignedShooters.find(s => s.id === schedule.assigned_shooter_id);
               if (shooter) {
@@ -517,14 +543,14 @@ const fetchAllSchedules = async () => {
       console.error('❌ 내부 스케줄 조회 오류:', internalError);
     }
 
-    // ✅ 수정된 부분: main_location_id를 직접 추가
+    // ✅ 통합 스케줄 생성
     const unifiedSchedules = [
-      ...(studioAcademyData || []).map(s => ({
+      ...filteredSchedules.map(s => ({
         ...s,
         unified_type: 'studio-academy',
         unified_location_id: `${s.schedule_type}-${s.sub_location_id}`,
         unified_date: s.shoot_date,
-        main_location_id: s.sub_locations?.main_location_id, // ✅ 추가됨
+        main_location_id: s.sub_locations?.main_location_id,
         location_name: s.sub_locations?.name,
         main_location_name: s.sub_locations?.main_locations?.name
       })),
@@ -535,14 +561,14 @@ const fetchAllSchedules = async () => {
           unified_type: 'internal',
           unified_location_id: `internal-${typeIndex}`,
           unified_date: s.schedule_date,
-          main_location_id: null, // 내부 업무는 main_location_id 없음
+          main_location_id: null,
           location_name: s.schedule_type,
           main_location_name: null
         };
       })
     ];
 
-    console.log('✅ 통합스케줄 조회 완료 (location 정보 포함):', unifiedSchedules.length);
+    console.log('✅ 통합스케줄 조회 완료 (분할 처리 포함):', unifiedSchedules.length);
     setSchedules(unifiedSchedules);
     
   } catch (error) {

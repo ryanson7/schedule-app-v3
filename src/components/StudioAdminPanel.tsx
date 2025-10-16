@@ -185,94 +185,94 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
     }
   };
 
-  const fetchSchedules = async () => {
-    if (!hasAccess) return;
+const fetchSchedules = async () => {
+  if (!hasAccess) return;
 
-    try {
-      const weekDates = generateWeekDates();
-      if (weekDates.length === 0) {
-        throw new Error('생성된 날짜가 없습니다');
-      }
+  try {
+    const weekDates = generateWeekDates();
+    if (weekDates.length === 0) {
+      throw new Error('생성된 날짜가 없습니다');
+    }
 
-      const startDate = weekDates[0].date;
-      const endDate = weekDates[weekDates.length - 1].date;
+    const startDate = weekDates[0].date;
+    const endDate = weekDates[weekDates.length - 1].date;
 
-      if (!startDate || !endDate || startDate.includes('NaN') || endDate.includes('NaN')) {
-        throw new Error(`유효하지 않은 날짜 범위: ${startDate} ~ ${endDate}`);
-      }
+    if (!startDate || !endDate || startDate.includes('NaN') || endDate.includes('NaN')) {
+      throw new Error(`유효하지 않은 날짜 범위: ${startDate} ~ ${endDate}`);
+    }
 
-      console.log('🔍 스케줄 조회 날짜 범위:', startDate, '~', endDate);
+    console.log('🔍 스케줄 조회 날짜 범위:', startDate, '~', endDate);
 
-      const { data, error } = await supabase
-        .from('schedules')
-        .select(`
-          *, 
-          sub_locations!inner(
+    const { data, error } = await supabase
+      .from('schedules')
+      .select(`
+        *, 
+        sub_locations!inner(
+          id,
+          name,
+          main_location_id,
+          main_locations!inner(
             id,
             name,
-            main_location_id,
-            main_locations!inner(
-              id,
-              name,
-              location_type
-            )
+            location_type
           )
-        `)
-        .eq('schedule_type', 'studio')
-        .in('approval_status', [
-          'approved', 'confirmed', 'pending', 'approval_requested',
-          'modification_requested', 'modification_approved',
-          'cancellation_requested', 'deletion_requested',
-          'cancelled'
-        ])
-        .gte('shoot_date', startDate)
-        .lte('shoot_date', endDate)
-        .order('shoot_date')
-        .order('start_time');
+        )
+      `)
+      .eq('schedule_type', 'studio')
+      .eq('is_active', true)  // ✅ 활성화된 스케줄만
+      .in('approval_status', [
+        'approved', 'confirmed', 'pending', 'approval_requested',
+        'modification_requested', 'modification_approved',
+        'cancellation_requested', 'deletion_requested',
+        'cancelled'
+      ])
+      .gte('shoot_date', startDate)
+      .lte('shoot_date', endDate)
+      .order('shoot_date')
+      .order('start_time');
 
-      if (error) throw error;
+    if (error) throw error;
 
-        const filteredSchedules = (data || []).filter(schedule => {
-          // ✅ "분할완료" 상태도 숨김 처리
-          return schedule.approval_status !== 'split_completed' && 
-                schedule.deletion_reason !== 'split_converted';
-        });
+    // ✅ 관리자 화면: 분할 원본 숨김, 자식만 표시
+    const filteredSchedules = (data || []).filter(schedule => {
+      // ❌ 분할된 원본 숨김
+      if (schedule.is_split === true && !schedule.parent_schedule_id) {
+        return false;
+      }
+      return true;
+    });
 
-        console.log('📊 스케줄 필터링 결과:', {
-          전체: data?.length || 0,
-          표시: filteredSchedules.length,
-          분할완료숨김: (data?.length || 0) - filteredSchedules.length
-        });
+    console.log('📊 관리자 화면 필터링:', {
+      전체: data?.length || 0,
+      표시: filteredSchedules.length,
+      분할원본숨김: (data?.length || 0) - filteredSchedules.length
+    });
 
-      const activeSchedules = data?.filter(s => s.approval_status !== 'cancelled') || [];
-      const userCancelledSchedules = data?.filter(s => 
-        s.approval_status === 'cancelled' && 
-        (s.deletion_reason === 'user_cancelled' || s.deletion_reason === null || s.deletion_reason === undefined)
-      ) || [];
-      const systemRemovedSchedules = data?.filter(s => 
-        s.approval_status === 'cancelled' && s.deletion_reason === 'split_converted'
-      ) || [];
+    const activeSchedules = filteredSchedules.filter(s => s.approval_status !== 'cancelled') || [];
+    const userCancelledSchedules = filteredSchedules.filter(s => 
+      s.approval_status === 'cancelled' && 
+      (s.deletion_reason === 'user_cancelled' || s.deletion_reason === null || s.deletion_reason === undefined)
+    ) || [];
 
-      console.log('📊 스케줄 분류 결과:', {
-        활성: activeSchedules.length,
-        사용자취소: userCancelledSchedules.length,
-        시스템자동제거: systemRemovedSchedules.length
-      });
+    console.log('📊 스케줄 분류 결과:', {
+      활성: activeSchedules.length,
+      사용자취소: userCancelledSchedules.length
+    });
 
-      const displaySchedules = [
-        ...activeSchedules,
-        ...userCancelledSchedules
-      ];
+    const displaySchedules = [
+      ...activeSchedules,
+      ...userCancelledSchedules
+    ];
 
-      console.log('🔧 시스템 자동 제거 스케줄 숨김 처리:', systemRemovedSchedules.length, '개');
-      console.log('✅ 스튜디오 스케줄 표시:', displaySchedules.length, '개');
+    console.log('✅ 스튜디오 스케줄 표시:', displaySchedules.length, '개');
 
-      setSchedules(displaySchedules);
-    } catch (error) {
-      console.error('스케줄 데이터 로딩 오류:', error);
-      throw error;
-    }
-  };
+    setSchedules(displaySchedules);
+  } catch (error) {
+    console.error('스케줄 데이터 로딩 오류:', error);
+    throw error;
+  }
+};
+
 
   const fetchStudioLocations = async () => {
     if (!hasAccess) return;
@@ -420,22 +420,36 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
     }, 100);
   }, []);
 
-  const handleCellClick = (date: string, location: any) => {
-    if (!hasAccess) return;
-    
-    console.log('🎯 셀 클릭 - 모달 열기:', { date, locationId: location.id });
-    
-    const modalData = {
-      mode: 'create',
-      date,
-      locationId: location.id,
-      scheduleData: null,
-      shootingTypeMapping
-    };
-    
-    setModalData(modalData);
-    setModalOpen(true);
+const handleCellClick = (date: string, location: any) => {
+  if (!hasAccess) return;
+  
+  // 디버깅 추가
+  const studioData = studioLocations.find(s => s.id === location.id);
+  console.log('🔍 스튜디오 데이터:', studioData);
+  console.log('🔍 촬영형식들:', studioData?.shooting_types);
+  console.log('🔍 기본 촬영형식:', studioData?.primary_shooting_type);
+  
+  const defaultShootingType = studioData?.primary_shooting_type || studioData?.shooting_types?.[0] || null;
+  
+  const modalData = {
+    mode: 'create',
+    date,
+    locationId: location.id,
+    scheduleData: {
+      sub_location_id: location.id,
+      shooting_type: defaultShootingType,
+      shoot_date: date
+    },
+    shootingTypeMapping
   };
+  
+  console.log('📋 모달 전달 데이터:', modalData);
+  
+  setModalData(modalData);
+  setModalOpen(true);
+};
+
+
 
   const getScheduleForCell = (date: string, location: any) => {
     const cellSchedules = schedules.filter(s => s.shoot_date === date && s.sub_location_id === location.id);
@@ -847,11 +861,21 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
     }
   };
 
-  const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], reason: string) => {
+const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], reason: string) => {
   console.log('🔧 스케줄 분할 요청:', { scheduleId, splitPoints, reason });
 
   try {
-    // setSaving(true); // 이미 있는 상태 사용
+    // 시간 변환 헬퍼 함수
+    const timeToMinutes = (timeString: string): number => {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const minutesToTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:00`;
+    };
 
     // 1. 원본 스케줄 조회
     const { data: originalSchedule, error: fetchError } = await supabase
@@ -864,31 +888,14 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
       throw new Error('원본 스케줄을 찾을 수 없습니다.');
     }
 
-    console.log('📋 원본 스케줄:', originalSchedule);
-
-    // 2. 분할 지점으로 세그먼트 생성
-    const timeToMinutes = (timeString: string): number => {
-      const [hours, minutes] = timeString.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-
-    const minutesToTime = (minutes: number): string => {
-      const hours = Math.floor(minutes / 60);
-      const mins = minutes % 60;
-      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-    };
-
+    // 2. 세그먼트 생성
     const startMinutes = timeToMinutes(originalSchedule.start_time);
     const endMinutes = timeToMinutes(originalSchedule.end_time);
-    
-    // 분할 지점을 분 단위로 변환
     const splitMinutes = splitPoints.map(timeToMinutes).sort((a, b) => a - b);
     
-    // 세그먼트 생성
     const segments = [];
     let currentStart = startMinutes;
 
-    // 각 분할 지점까지 세그먼트 생성
     splitMinutes.forEach((splitPoint) => {
       if (currentStart < splitPoint) {
         segments.push({
@@ -899,7 +906,6 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
       }
     });
 
-    // 마지막 세그먼트
     if (currentStart < endMinutes) {
       segments.push({
         start_time: minutesToTime(currentStart),
@@ -913,22 +919,71 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
 
     console.log('🔧 생성된 세그먼트:', segments);
 
-    // 3. 트랜잭션으로 분할 실행
-    const { data: insertResult, error: insertError } = await supabase.rpc('split_schedule', {
-      p_original_schedule_id: scheduleId,
-      p_segments: segments,
-      p_reason: reason,
-      p_user_id: parseInt(localStorage.getItem('userId') || '0')
-    });
+    // 3. schedule_group_id 생성
+    const scheduleGroupId = `split_${scheduleId}_${Date.now()}`;
+
+    // 4. 분할된 새 스케줄들 생성
+    const newSchedules = segments.map((segment, index) => ({
+      ...originalSchedule,
+      id: undefined,
+      parent_schedule_id: scheduleId,
+      schedule_group_id: scheduleGroupId,
+      is_split_schedule: true,
+      start_time: segment.start_time,
+      end_time: segment.end_time,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }));
+
+    // 5. 새 스케줄 삽입
+    const { data: insertedSchedules, error: insertError } = await supabase
+      .from('schedules')
+      .insert(newSchedules)
+      .select();
 
     if (insertError) {
-      console.error('❌ RPC 오류:', insertError);
-      throw new Error(`분할 처리 중 오류: ${insertError.message}`);
+      throw new Error(`분할 스케줄 생성 실패: ${insertError.message}`);
     }
 
-    console.log('✅ 분할 완료:', insertResult);
+    // 6. ✅ 원본 스케줄 업데이트 (삭제하지 않음)
+    const { error: updateError } = await supabase
+      .from('schedules')
+      .update({
+        is_split: true,
+        schedule_group_id: scheduleGroupId,
+        split_at: new Date().toISOString(),
+        split_reason: reason,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', scheduleId);
 
-    // 4. 스케줄 목록 새로고침
+    if (updateError) {
+      throw new Error(`원본 스케줄 업데이트 실패: ${updateError.message}`);
+    }
+
+    // 7. 히스토리 기록
+    await supabase
+      .from('schedule_history')
+      .insert({
+        schedule_id: scheduleId,
+        change_type: 'split',
+        changed_by: parseInt(localStorage.getItem('userId') || '0'),
+        description: `스케줄 ${segments.length}개로 분할 (사유: ${reason})`,
+        old_value: JSON.stringify({ 
+          start_time: originalSchedule.start_time, 
+          end_time: originalSchedule.end_time 
+        }),
+        new_value: JSON.stringify({ 
+          segments, 
+          schedule_group_id: scheduleGroupId,
+          child_ids: insertedSchedules?.map(s => s.id) 
+        }),
+        created_at: new Date().toISOString(),
+        changed_at: new Date().toISOString()
+      });
+
+    console.log('✅ 분할 완료:', insertedSchedules?.length, '개 생성');
+
     await fetchSchedules();
 
     alert(`스케줄이 성공적으로 ${segments.length}개로 분할되었습니다!`);
@@ -937,11 +992,8 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
     console.error('❌ 분할 오류:', error);
     alert(error instanceof Error ? error.message : '분할 처리 중 오류가 발생했습니다.');
     throw error;
-  } finally {
-    // setSaving(false); // 모달에서 처리됨
   }
 };
-
 
 
   const refreshWeek = useCallback(() => {

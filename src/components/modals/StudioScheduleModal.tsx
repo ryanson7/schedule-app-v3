@@ -14,6 +14,7 @@ interface StudioScheduleModalProps {
   onDelete?: (scheduleId: number) => Promise<void>;
   mode?: 'create' | 'edit' | 'split';
   onSplitSchedule?: (scheduleId: number, splitPoints: string[], reason: string) => Promise<void>;
+  onSplit?: () => void;
 }
 
 // 통일된 스타일 변수
@@ -769,18 +770,18 @@ export default function StudioScheduleModal({
         sub_location_id: getInitValue(scheduleData.sub_location_id || initialData.locationId)
       };
     } else {
+      // 🆕 신규 등록 모드
       const regRange = SchedulePolicy.getRegistrationDateRange();
-      
       return {
-        shoot_date: getInitValue(initialData?.date || regRange.startDate),
+        shoot_date: getInitValue(scheduleData?.shoot_date || initialData?.date || regRange.startDate),
         start_time: '',
         end_time: '',
         professor_name: '',
         course_name: '',
         course_code: '',
-        shooting_type: '',
+        shooting_type: getInitValue(scheduleData?.shooting_type || ''),  // 🆕 수정
         notes: '',
-        sub_location_id: getInitValue(initialData?.locationId)
+        sub_location_id: getInitValue(scheduleData?.sub_location_id || initialData?.locationId)  // 🆕 수정
       };
     }
   };
@@ -819,6 +820,17 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
   console.log('🔧 스케줄 분할 요청:', { scheduleId, splitPoints, reason });
 
   try {
+    const timeToMinutes = (timeString: string): number => {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const minutesToTime = (minutes: number): string => {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:00`;
+    };
+
     // 1. 원본 스케줄 조회
     const { data: originalSchedule, error: fetchError } = await supabase
       .from('schedules')
@@ -830,90 +842,127 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
       throw new Error('원본 스케줄을 찾을 수 없습니다.');
     }
 
-    console.log('📋 원본 스케줄:', originalSchedule);
-
-    // 2. 헬퍼 함수들
-    const timeToMinutes = (timeString: string): number => {
-      const [hours, minutes] = timeString.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-
-    const minutesToTime = (minutes: number): string => {
-      const hours = Math.floor(minutes / 60);
-      const mins = minutes % 60;
-      return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-    };
-
+    // 2. 세그먼트 생성
     const startMinutes = timeToMinutes(originalSchedule.start_time);
     const endMinutes = timeToMinutes(originalSchedule.end_time);
+    const splitMinutes = splitPoints.map(timeToMinutes).sort((a, b) => a - b);
     
-    // 3. 분할 지점 처리
-    let segments = [];
-    
-    if (!splitPoints || splitPoints.length === 0) {
-      // 🔧 분할 지점이 없는 경우 - 단순 시간 수정으로 처리
-      segments = [{
-        start_time: originalSchedule.start_time,
-        end_time: originalSchedule.end_time
-      }];
-      
-      console.log('🔧 시간 수정 모드 - 세그먼트:', segments);
-    } else {
-      // 🔧 실제 분할 처리
-      const splitMinutes = splitPoints
-        .map(timeToMinutes)
-        .filter(minutes => minutes > startMinutes && minutes < endMinutes)
-        .sort((a, b) => a - b);
-      
-      console.log('🔧 유효한 분할 지점 (분 단위):', splitMinutes);
-      
-      let currentStart = startMinutes;
+    const segments = [];
+    let currentStart = startMinutes;
 
-      // 각 분할 지점까지 세그먼트 생성
-      splitMinutes.forEach((splitPoint) => {
+    splitMinutes.forEach((splitPoint) => {
+      if (currentStart < splitPoint) {
         segments.push({
           start_time: minutesToTime(currentStart),
           end_time: minutesToTime(splitPoint)
         });
         currentStart = splitPoint;
-      });
+      }
+    });
 
-      // 마지막 세그먼트
+    if (currentStart < endMinutes) {
       segments.push({
         start_time: minutesToTime(currentStart),
         end_time: minutesToTime(endMinutes)
       });
     }
 
+    if (segments.length < 2) {
+      throw new Error('유효한 분할 구간이 생성되지 않았습니다.');
+    }
+
     console.log('🔧 생성된 세그먼트:', segments);
 
-    if (segments.length === 0) {
-      throw new Error('유효한 세그먼트가 생성되지 않았습니다.');
+    // 3. schedule_group_id 생성
+    const scheduleGroupId = `split_${scheduleId}_${Date.now()}`;
+
+    // ✅ 4. 원본 임시 비활성화 (시간 충돌 방지)
+    const { error: deactivateError } = await supabase
+      .from('schedules')
+      .update({
+        is_active: false,  // ✅ 임시 비활성화
+        is_split: true,
+        schedule_group_id: scheduleGroupId,
+        split_at: new Date().toISOString(),
+        split_reason: reason,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', scheduleId);
+
+    if (deactivateError) {
+      throw new Error(`원본 업데이트 실패: ${deactivateError.message}`);
     }
 
-    // 4. RPC 함수 호출로 분할 실행
-    const { data: insertResult, error: insertError } = await supabase.rpc('split_schedule', {
-      p_original_schedule_id: scheduleId,
-      p_segments: segments,
-      p_reason: reason,
-      p_user_id: parseInt(localStorage.getItem('userId') || '0')
+    // 5. 분할된 새 스케줄들 생성
+    const newSchedules = segments.map((segment, index) => {
+      const { id, ...scheduleWithoutId } = originalSchedule;  // ✅ id 제거
+      
+      return {
+        ...scheduleWithoutId,  // ✅ id 없는 데이터
+        parent_schedule_id: scheduleId,
+        schedule_group_id: scheduleGroupId,
+        is_split_schedule: true,
+        start_time: segment.start_time,
+        end_time: segment.end_time,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
     });
 
+
+    const { data: insertedSchedules, error: insertError } = await supabase
+      .from('schedules')
+      .insert(newSchedules)
+      .select();
+
     if (insertError) {
-      console.error('❌ RPC 오류:', insertError);
-      throw new Error(`분할 처리 중 오류: ${insertError.message}`);
+      console.error('❌ 자식 생성 실패, 원본 복구 중...');
+      
+      // ❌ 실패 시 원본 복구
+      await supabase
+        .from('schedules')
+        .update({
+          is_active: true,
+          is_split: false,
+          schedule_group_id: null,
+          split_at: null,
+          split_reason: null
+        })
+        .eq('id', scheduleId);
+      
+      throw new Error(`분할 스케줄 생성 실패: ${insertError.message}`);
     }
 
-    console.log('✅ 분할 완료:', insertResult);
+    // 7. 히스토리 기록
+    await supabase
+      .from('schedule_history')
+      .insert({
+        schedule_id: scheduleId,
+        change_type: 'split',
+        changed_by: parseInt(localStorage.getItem('userId') || '0'),
+        description: `스케줄 ${segments.length}개로 분할 (사유: ${reason})`,
+        old_value: JSON.stringify({ 
+          start_time: originalSchedule.start_time, 
+          end_time: originalSchedule.end_time 
+        }),
+        new_value: JSON.stringify({ 
+          segments, 
+          schedule_group_id: scheduleGroupId,
+          child_ids: insertedSchedules?.map(s => s.id) 
+        }),
+        created_at: new Date().toISOString(),
+        changed_at: new Date().toISOString()
+      });
 
-    // 5. 스케줄 목록 새로고침
-    await fetchData();
+    console.log('✅ 분할 완료:', insertedSchedules?.length, '개 생성');
 
-    const message = segments.length === 1 
-      ? '스케줄 시간이 수정되었습니다!'
-      : `스케줄이 성공적으로 ${segments.length}개로 분할되었습니다!`;
-    
-    alert(message);
+    // ✅ onSplitSchedule가 있으면 호출
+    if (onSplitSchedule) {
+      await onSplitSchedule(scheduleId, splitPoints, reason);
+    }
+
+    alert(`스케줄이 성공적으로 ${segments.length}개로 분할되었습니다!`);
+    onClose();  // 모달 닫기
 
   } catch (error) {
     console.error('❌ 분할 오류:', error);
@@ -921,6 +970,8 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
     throw error;
   }
 };
+
+
 
 
   const switchToSplitMode = () => {
@@ -1426,52 +1477,62 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
   }, [formData.shooting_type, compatibleStudios, locations, isEditMode]);
 
   const checkScheduleConflict = async (
-    shoot_date: string,
-    start_time: string,
-    end_time: string,
-    sub_location_id: string,
-    schedule_id_to_exclude?: number
-  ): Promise<boolean> => {
-    if (!shoot_date || !start_time || !end_time || !sub_location_id) {
+  shootDate: string,
+  startTime: string,
+  endTime: string,
+  subLocationId: string,
+  scheduleIdToExclude?: number
+): Promise<boolean> => {
+  if (!shootDate || !startTime || !endTime || !subLocationId) return false;
+
+  try {
+    let query = supabase
+      .from('schedules')
+      .select('id, professor_name, start_time, end_time, sub_location_id, approval_status, parent_schedule_id, deletion_reason, sub_locations(id, name)')
+      .eq('shoot_date', shootDate)  // shoot_date
+      .eq('sub_location_id', parseInt(subLocationId))  // sub_location_id
+      .eq('schedule_type', 'studio')  // schedule_type
+      .eq('is_active', true)  // is_active
+      .neq('approval_status', 'cancellation_requested')  // approval_status
+      .neq('deletion_reason', 'split_converted')
+      .or(`and(start_time.lt.${endTime},end_time.gt.${startTime})`);  // start_time, end_time
+
+    if (scheduleIdToExclude) {
+      query = query.neq('id', scheduleIdToExclude);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('중복 체크 오류:', error);
       return false;
     }
 
-    try {
-      let query = supabase
-        .from('schedules')
-        .select(`
-          id, 
-          professor_name, 
-          start_time, 
-          end_time, 
-          sub_location_id,
-          approval_status,
-          sub_locations(id, name)
-        `)
-        .eq('shoot_date', shoot_date)
-        .eq('sub_location_id', parseInt(sub_location_id))
-        .eq('schedule_type', 'studio')
-        .eq('is_active', true)
-        .neq('approval_status', 'cancellation_requested')
-        .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+    const currentSchedule = await supabase
+      .from('schedules')
+      .select('parent_schedule_id')
+      .eq('id', scheduleIdToExclude || 0)
+      .maybeSingle();
 
-      if (schedule_id_to_exclude) {
-        query = query.neq('id', schedule_id_to_exclude);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('중복 체크 쿼리 오류:', error);
+    const filteredData = (data || []).filter(schedule => {
+      if (
+        schedule.parent_schedule_id &&
+        currentSchedule.data?.parent_schedule_id &&
+        schedule.parent_schedule_id === currentSchedule.data.parent_schedule_id
+      ) {
         return false;
       }
+      return true;
+    });
 
-      return Array.isArray(data) && data.length > 0;
-    } catch (error) {
-      console.error('중복 체크 예외:', error);
-      return false;
-    }
-  };
+    return filteredData.length > 0;
+  } catch (error) {
+    console.error('스케줄 충돌 확인 오류:', error);
+    return false;
+  }
+};
+
+
 
   useEffect(() => {
     const checkConflict = async () => {

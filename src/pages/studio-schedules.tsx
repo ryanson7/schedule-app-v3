@@ -302,24 +302,7 @@ const shouldShowBreakTimeSettings = (startTime: string, endTime: string): boolea
   return durationMinutes > 240;
 };
 
-// D-day 배지 색상 함수
-const getDayBadgeColor = (policy: any) => {
-  if (policy.needsContact) {
-    if (policy.daysLeft === 1) {
-      return '#D32F2F';
-    } else if (policy.daysLeft === 0) {
-      return '#B71C1C';
-    } else {
-      return '#90A4AE';
-    }
-  }
-  
-  if (policy.canDirectEdit) {
-    return '#4CAF50';
-  } else {
-    return '#FF6F00';
-  }
-};
+
 
 interface StudioScheduleFormData {
   shoot_date: string;
@@ -917,44 +900,35 @@ export default function StudioSchedulePage() {
     });
   };
 
-  const fetchMyRequests = async (useFilters = false) => {
-    if (!userInfo) return;
+const fetchMyRequests = async () => {
+  if (!userInfo?.name) {
+    console.log('❌ 사용자 정보 없음 - 조회 중단');
+    return;
+  }
 
-    setIsSearching(true);
+  console.log('교수 스케줄 조회 시작:', userInfo.name);
 
-    try {
-      const userName = localStorage.getItem('userName');
-      
-      console.log('교수 스케줄 조회 시작');
+  const { data, error } = await supabase
+    .from('schedules')
+    .select(`
+      *,
+      sub_locations!inner(id, name)
+    `)
+    .eq('professor_name', userInfo.name)
+    .eq('schedule_type', 'studio')
+    .eq('is_active', true)  // ✅ 활성화된 것만
+    .is('parent_schedule_id', null)  // ✅ 원본만 조회 (분할 자식 제외)
+    .order('shoot_date', { ascending: false })
+    .order('start_time', { ascending: false });
 
-      const { data, error } = await supabase
-        .from('schedules')
-        .select(`
-          *,
-          sub_locations(id, name)
-        `)
-        .eq('professor_name', userName)
-        .order('created_at', { ascending: false });
+  if (error) {
+    console.error('스케줄 조회 오류:', error);
+    return;
+  }
 
-      if (error) {
-        console.error('스케줄 조회 오류:', error);
-        throw error;
-      }
-
-      console.log('스케줄 조회 완료:', data?.length || 0, '건');
-      
-      const groupedData = groupSplitSchedules(data || []);
-      setMyRequests(groupedData);
-      setTotalRequestCount((data || []).length);
-      setHasMore(false);
-
-    } catch (err) {
-      console.error('요청 목록 조회 오류:', err);
-      setMyRequests([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
+  console.log('✅ 교수 화면 스케줄 조회:', data?.length, '건');
+  setMyRequests(data || []);
+};
 
   const handleSearch = () => {
     setSearchFilters(prev => ({ ...prev, offset: 0 }));
@@ -1325,10 +1299,19 @@ export default function StudioSchedulePage() {
   };
 
   const startEditSchedule = (schedule: any) => {
-    console.log('인라인 수정 시작:', schedule);
-    
+    // ✅ 올바른 메서드 사용
+    const policy = SchedulePolicy.checkScheduleEditPolicy
+      ? SchedulePolicy.checkScheduleEditPolicy(schedule.shoot_date, testDate)
+      : { needsContact: false, canDirectEdit: true };
+
+    // ✅ 분할된 스케줄이면 needsContact = true로 변경 (수정요청 버튼 표시)
+    if (schedule.deletion_reason === 'split_converted') {
+      policy.needsContact = true;
+      policy.canDirectEdit = false;
+    }
+
+    // 수정 가능 → 인라인 수정 진입
     setEditingSchedule(schedule.id);
-    
     setEditFormData({
       shoot_date: schedule.shoot_date,
       start_time: schedule.start_time?.substring(0, 5) || '',
@@ -1344,15 +1327,14 @@ export default function StudioSchedulePage() {
       schedule_group_id: schedule.schedule_group_id,
       is_split_schedule: schedule.is_split_schedule || false
     });
-    
-    setEditAvailableDates(generateAllAvailableDates(schedule.shoot_date, testDate, isDevModeActive));
-    
-    console.log('인라인 수정 모드 활성화됨', {
-      기존시간: `${schedule.start_time} ~ ${schedule.end_time}`,
-      로딩된시간: `${schedule.start_time?.substring(0, 5)} ~ ${schedule.end_time?.substring(0, 5)}`,
-      휴식시간: schedule.break_time_enabled ? `${schedule.break_start_time?.substring(0, 5)} ~ ${schedule.break_end_time?.substring(0, 5)}` : '없음'
-    });
+
+    setEditAvailableDates(
+      generateAllAvailableDates(schedule.shoot_date, testDate, isDevModeActive)
+    );
   };
+
+
+
 
   const handleEditTimeChange = (field: 'start_time' | 'end_time', value: string, newFormData: any) => {
     console.log('수정 폼 시간 변경:', { field, value, newFormData });
@@ -3187,25 +3169,6 @@ export default function StudioSchedulePage() {
                         </div>
                       )}
 
-                      {/* D+/- 표시 */}
-                      {!isPast && !isCancelled && (
-                        <div style={{
-                          position: 'absolute',
-                          top: 8,
-                          right: 8,
-                          backgroundColor: getDayBadgeColor(policy),
-                          color: 'white',
-                          borderRadius: '6px',
-                          padding: '4px 8px',
-                          fontSize: 'clamp(10px, 2.5vw, 12px)',
-                          fontWeight: '600',
-                          textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                        }}>
-                          {policy.daysLeft >= 0 ? `D+${policy.daysLeft}` : `D${policy.daysLeft}`}
-                        </div>
-                      )}
 
                       <div style={{ 
                         position: 'absolute',
@@ -3381,26 +3344,7 @@ export default function StudioSchedulePage() {
                         </div>
                       )}
 
-                      {/* 수정된 수정 기간 표시 */}
-                      {['confirmed', 'modification_approved', 'pending'].includes(request.approval_status) && 
-                      !policy.needsContact && !isPast && !isCancelled && editStatus.remainingTime && (
-                        <div style={{
-                          margin: '8px 6px',
-                          padding: 'clamp(8px, 2vw, 10px)',
-                          borderRadius: '6px',
-                          backgroundColor: editStatus.urgencyLevel === 'danger' ? '#ffebee' : 
-                                        editStatus.urgencyLevel === 'warning' ? '#fce4ec' : '#f1f8e9',
-                          border: `1px solid ${editStatus.urgencyLevel === 'danger' ? '#f44336' : 
-                                              editStatus.urgencyLevel === 'warning' ? '#ad1457' : '#4caf50'}`,
-                          color: editStatus.urgencyLevel === 'danger' ? '#d32f2f' : 
-                                editStatus.urgencyLevel === 'warning' ? '#ad1457' : '#2e7d32',
-                          fontSize: 'clamp(11px, 2.5vw, 13px)',
-                          fontWeight: '500'
-                        }}>
-                          수정 기간: {editStatus.remainingTime.days || 0}일 {editStatus.remainingTime.hours || 0}시간 남음
-                          {editStatus.remainingTime.totalMinutes <= 0 && ' 종료'}
-                        </div>
-                      )}
+
 
                       {/* 🔥 수정된 인라인 수정 폼 - 내용이 나오도록 수정 */}
                       {editingSchedule === request.id && (
