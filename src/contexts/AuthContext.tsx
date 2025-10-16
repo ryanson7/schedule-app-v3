@@ -1,4 +1,4 @@
-// contexts/AuthContext.tsx (수정 완료 버전)
+// contexts/AuthContext.tsx (최종 완성 버전)
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/router';
@@ -42,12 +42,10 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
   const [authInitialized, setAuthInitialized] = useState(false);
   const router = useRouter();
 
-  // 🎯 checkTempPassword 함수 (내부 구현)
   const checkTempPassword = useCallback(async (email: string): Promise<boolean> => {
     return false;
   }, []);
 
-  // 쿠키 설정 헬퍼 함수
   const setCookie = useCallback((name: string, value: string, maxAge = 86400) => {
     if (typeof window === 'undefined') return;
     const secure = window.location.protocol === 'https:';
@@ -59,7 +57,6 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
     document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Lax`;
   }, []);
 
-  // 사용자 정보 저장 함수
   const saveUserInfo = useCallback((userName: string, userRole: string, userEmail: string, userId: string) => {
     if (typeof window === 'undefined') return;
     
@@ -81,7 +78,6 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
     });
   }, [setCookie]);
 
-  // 사용자 정보 삭제 함수
   const clearUserInfo = useCallback(() => {
     if (typeof window === 'undefined') return;
     
@@ -100,7 +96,7 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
     const keysToRemove = [
       'userRole', 'userEmail', 'userName', 'userId', 
       'isLoggedIn', 'professorName', 'isAuthenticated',
-      'userNumericId'  // ✅ 추가
+      'userNumericId'
     ];
     
     keysToRemove.forEach(key => localStorage.removeItem(key));
@@ -114,7 +110,7 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
     console.log('🔄 사용자 정보 완전 삭제 완료');
   }, [deleteCookie]);
 
-  // ✅ users 테이블에서 숫자 ID 조회 (신규 추가)
+  // ✅ auth_id로 사용자 조회 (최종 수정)
   const loadUserData = useCallback(async (authUserId: string) => {
     try {
       console.log('🔍 숫자 ID 조회 시작:', authUserId);
@@ -122,7 +118,8 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
       const { data: userData, error } = await supabase
         .from('users')
         .select('id')
-        .eq('auth_user_id', authUserId)
+        .eq('auth_id', authUserId)  // ✅ auth_id로 조회
+        .eq('is_active', true)
         .single();
 
       if (error) {
@@ -145,7 +142,6 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
     }
   }, []);
 
-  // 로그인 처리 함수
   const handleUserLogin = useCallback(async (session: Session) => {
     if (authInitialized) return;
     
@@ -215,7 +211,7 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
 
     saveUserInfo(userName, userRole, email || '', session.user.id);
     
-    // ✅ 숫자 ID 조회 추가 (신규)
+    // ✅ 숫자 ID 조회
     await loadUserData(session.user.id);
     
     setAuthInitialized(true);
@@ -225,9 +221,8 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
       console.log('🔄 리다이렉트:', redirectPath);
       setTimeout(() => router.push(redirectPath), 100);
     }
-  }, [authInitialized, saveUserInfo, loadUserData, router]);  // ✅ loadUserData 의존성 추가
+  }, [authInitialized, saveUserInfo, loadUserData, router]);
 
-  // 로그아웃 함수
   const signOut = useCallback(async () => {
     console.log('🚪 강제 로그아웃 시작');
     
@@ -245,7 +240,7 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
         const keysToRemove = [
           'userRole', 'userEmail', 'userName', 'userId', 
           'isLoggedIn', 'professorName', 'isAuthenticated',
-          'userNumericId'  // ✅ 추가
+          'userNumericId'
         ];
         
         keysToRemove.forEach(key => {

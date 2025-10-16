@@ -67,7 +67,7 @@ export default function ProfessorLogin() {
       }}>
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
           <img 
-            src="http://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
+            src="https://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
             alt="에듀윌 로고"
             style={{ height: '40px', marginBottom: '16px' }}
           />
