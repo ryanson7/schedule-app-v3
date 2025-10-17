@@ -8,9 +8,6 @@ export const config = {
 interface MessageRequest {
   type: string;
   message: string;
-  scheduleData?: any;
-  targetUsers?: string[];
-  channelId?: string;
 }
 
 export default async function handler(req: NextRequest) {
@@ -36,20 +33,13 @@ export default async function handler(req: NextRequest) {
 
   try {
     const body = await req.json() as MessageRequest;
-    const { message, type } = body;
-    
-    console.log(`📨 메시지 발송 요청 (type: ${type})`);
-    console.log(`메시지 내용:`, message.substring(0, 50));
+    const { message } = body;
     
     const naverWorksUrl = 'https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message';
-    
-    // ✅ JSON 직렬화 + UTF-8 보장
-    const payload = JSON.stringify({ text: message });
     
     // ✅ 타임아웃 60초
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.warn('⚠️ 타임아웃 60초 도달');
       controller.abort();
     }, 60000);
 
@@ -60,7 +50,7 @@ export default async function handler(req: NextRequest) {
           'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json',
         },
-        body: payload,
+        body: JSON.stringify({ text: message }),
         signal: controller.signal
       });
 
@@ -68,20 +58,20 @@ export default async function handler(req: NextRequest) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ 네이버웍스 응답 오류 (${response.status}):`, errorText.substring(0, 200));
+        console.error('❌ 네이버웍스 응답 오류:', response.status);
         
         return NextResponse.json(
           {
             success: false,
-            warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
-            error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`
+            warning: '메시지 발송 실패',
+            error: `HTTP ${response.status}`
           },
           { status: 200, headers: corsHeaders }
         );
       }
 
       const data = await response.json();
-      console.log(`✅ 네이버웍스 메시지 발송 성공 (type: ${type})`);
+      console.log('✅ 메시지 발송 성공');
 
       return NextResponse.json(
         {
@@ -94,26 +84,12 @@ export default async function handler(req: NextRequest) {
 
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
-      
-      // ✅ 에러 종류 구분
-      if (fetchError.name === 'AbortError') {
-        console.error('❌ 타임아웃:', fetchError.message);
-        return NextResponse.json(
-          {
-            success: false,
-            warning: '메시지 발송 타임아웃 - 스케줄 등록은 완료됨',
-            error: 'Timeout after 60 seconds'
-          },
-          { status: 200, headers: corsHeaders }
-        );
-      }
-      
-      console.error('❌ 네이버웍스 fetch 오류:', fetchError.message);
+      console.error('❌ fetch 오류:', fetchError.message);
 
       return NextResponse.json(
         {
           success: false,
-          warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
+          warning: '메시지 발송 실패',
           error: fetchError.message
         },
         { status: 200, headers: corsHeaders }
@@ -121,12 +97,12 @@ export default async function handler(req: NextRequest) {
     }
 
   } catch (error: any) {
-    console.error('❌ 메시지 처리 오류:', error);
+    console.error('❌ 처리 오류:', error);
     
     return NextResponse.json(
       {
         success: false,
-        warning: '메시지 발송 실패 - 스케줄 등록은 완료됨',
+        warning: '메시지 발송 실패',
         error: error.message
       },
       { status: 200, headers: corsHeaders }
