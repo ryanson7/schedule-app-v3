@@ -39,15 +39,19 @@ export default async function handler(req: NextRequest) {
     const { message, type } = body;
     
     console.log(`📨 메시지 발송 요청 (type: ${type})`);
+    console.log(`메시지 내용:`, message.substring(0, 50));
     
     const naverWorksUrl = 'https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message';
     
-    // ✅ 타임아웃 60초로 연장 (안전장치)
+    // ✅ JSON 직렬화 + UTF-8 보장
+    const payload = JSON.stringify({ text: message });
+    
+    // ✅ 타임아웃 60초
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       console.warn('⚠️ 타임아웃 60초 도달');
       controller.abort();
-    }, 60000);  // 60초
+    }, 60000);
 
     try {
       const response = await fetch(naverWorksUrl, {
@@ -56,7 +60,7 @@ export default async function handler(req: NextRequest) {
           'Content-Type': 'application/json; charset=utf-8',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ text: message }),
+        body: payload,
         signal: controller.signal
       });
 
@@ -90,6 +94,20 @@ export default async function handler(req: NextRequest) {
 
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
+      
+      // ✅ 에러 종류 구분
+      if (fetchError.name === 'AbortError') {
+        console.error('❌ 타임아웃:', fetchError.message);
+        return NextResponse.json(
+          {
+            success: false,
+            warning: '메시지 발송 타임아웃 - 스케줄 등록은 완료됨',
+            error: 'Timeout after 60 seconds'
+          },
+          { status: 200, headers: corsHeaders }
+        );
+      }
+      
       console.error('❌ 네이버웍스 fetch 오류:', fetchError.message);
 
       return NextResponse.json(
