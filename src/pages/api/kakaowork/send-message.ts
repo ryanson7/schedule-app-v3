@@ -1,19 +1,30 @@
-//export const config = { runtime: 'edge' };
+export const config = {
+  runtime: 'edge',
+};
 
-import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const KAKAOWORK_API_URL = 'https://api.kakaowork.com';
 
-const KAKAOWORK_API_URL = process.env.KAKAOWORK_API_URL || 'https://api.kakaowork.com';
-const BOT_APP_KEY = process.env.KAKAOWORK_BOT_APP_KEY;
+// Edge Runtime용 Supabase 클라이언트
+function getSupabaseClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    }
+  );
+}
 
 // DB에서 채팅방 ID 조회
 async function getConversationIdFromDB(phone: string): Promise<string | null> {
   try {
+    const supabase = getSupabaseClient();
+    
     const { data, error } = await supabase
       .from('user_kakaowork_conversations')
       .select('conversation_id')
@@ -36,6 +47,8 @@ async function getConversationIdFromDB(phone: string): Promise<string | null> {
 // DB에 채팅방 ID 저장
 async function saveConversationIdToDB(phone: string, userId: string, conversationId: string): Promise<void> {
   try {
+    const supabase = getSupabaseClient();
+    
     const { error } = await supabase
       .from('user_kakaowork_conversations')
       .upsert({
@@ -55,35 +68,64 @@ async function saveConversationIdToDB(phone: string, userId: string, conversatio
   }
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  console.log('🔧 === 카카오워크 메시지 발송 시작 ===');
+export default async function handler(req: Request) {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json',
+  };
+
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 200, headers });
+  }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
+    return new Response(
+      JSON.stringify({ success: false, message: 'Method not allowed' }),
+      { status: 405, headers }
+    );
   }
 
-  const { userId, userName, text, blocks, scheduleId, phone } = req.body;
-
-  console.log('📋 요청 데이터 확인:', {
-    userId,
-    userName,
-    phone,
-    textLength: text?.length || 0,
-    blocksCount: blocks?.length || 0,
-    scheduleId
-  });
-
-  if (!userId || !phone || (!text && !blocks)) {
-    return res.status(400).json({ message: '필수 정보가 누락되었습니다.' });
-  }
-
-  if (!BOT_APP_KEY) {
-    return res.status(500).json({ message: '카카오워크 API 키가 설정되지 않았습니다.' });
-  }
+  console.log('🔧 === 카카오워크 메시지 발송 시작 ===');
 
   try {
+    const body = await req.json();
+    const { userId, userName, text, blocks, scheduleId, phone } = body;
+
+    console.log('📋 요청 데이터 확인:', {
+      userId,
+      userName,
+      phone,
+      textLength: text?.length || 0,
+      blocksCount: blocks?.length || 0,
+      scheduleId
+    });
+
+    if (!userId || !phone || (!text && !blocks)) {
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          message: '필수 정보가 누락되었습니다.' 
+        }),
+        { status: 400, headers }
+      );
+    }
+
+    const BOT_APP_KEY = process.env.KAKAOWORK_BOT_APP_KEY;
+    if (!BOT_APP_KEY) {
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          message: '카카오워크 API 키가 설정되지 않았습니다.' 
+        }),
+        { status: 500, headers }
+      );
+    }
+
     // 1단계: DB에서 기존 채팅방 ID 조회
     let conversationId = await getConversationIdFromDB(phone);
+    const isNewConversation = !conversationId;
 
     // 2단계: 기존 채팅방이 없으면 새로 생성
     if (!conversationId) {
@@ -152,16 +194,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const messageData = JSON.parse(messageText);
     console.log('✅ 카카오워크 메시지 발송 성공:', messageData.message?.id);
 
-    res.status(200).json({ 
-      success: true, 
-      messageId: messageData.message?.id,
-      conversationId: conversationId,
-      userName,
-      isNewConversation: conversationId !== await getConversationIdFromDB(phone)
-    });
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        messageId: messageData.message?.id,
+        conversationId: conversationId,
+        userName,
+        isNewConversation: isNewConversation
+      }),
+      { status: 200, headers }
+    );
 
   } catch (error: any) {
     console.error('❌ 카카오워크 메시지 발송 오류:', error);
-    res.status(500).json({ message: error.message });
+    return new Response(
+      JSON.stringify({ 
+        success: false,
+        message: error.message 
+      }),
+      { status: 500, headers }
+    );
   }
 }
