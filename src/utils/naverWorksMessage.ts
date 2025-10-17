@@ -1,7 +1,7 @@
-// utils/naverWorksMessage.ts (이모티콘 제거 버전)
+// utils/naverWorksMessage.ts (백그라운드 처리 + 타임아웃 방지 버전)
 
-// 1. 승인 요청 메시지 (매니저 → 관리자들)
-export const sendApprovalRequest = async (schedule: any, requestType: 'edit' | 'cancel') => {
+// ✅ 1. 승인 요청 메시지 (매니저 → 관리자들) - 백그라운드 처리
+export const sendApprovalRequest = (schedule: any, requestType: 'edit' | 'cancel'): void => {
   const messageText = `${requestType === 'edit' ? '수정' : '취소'} 승인 요청
 
 교수명: ${schedule.professor_name}
@@ -12,27 +12,33 @@ export const sendApprovalRequest = async (schedule: any, requestType: 'edit' | '
 
 관리자 페이지에서 승인 처리해주세요.`;
 
-  try {
-    const response = await fetch('/api/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'approval_request',
-        message: messageText,
-        scheduleData: schedule
-      })
-    });
+  console.log('📨 승인 요청 메시지 발송 시작 (백그라운드)');
 
-    const result = await response.json();
-    return result.success;
-  } catch (error) {
-    console.error('승인 요청 메시지 발송 실패:', error);
-    return false;
-  }
+  // ✅ 백그라운드 발송 (await 없음)
+  fetch('/api/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'approval_request',
+      message: messageText,
+      scheduleData: schedule
+    })
+  })
+    .then(response => response.json())
+    .then(result => {
+      if (result.success) {
+        console.log('✅ 승인 요청 메시지 발송 성공');
+      } else {
+        console.warn('⚠️ 승인 요청 메시지 발송 실패:', result.error);
+      }
+    })
+    .catch(error => {
+      console.error('❌ 승인 요청 메시지 발송 오류:', error);
+    });
 };
 
-// 2. 승인 완료 메시지 (관리자 → 매니저)
-export const sendApprovalComplete = async (schedule: any, managerUserId: string, approved: boolean) => {
+// ✅ 2. 승인 완료 메시지 (관리자 → 매니저) - 백그라운드 처리
+export const sendApprovalComplete = (schedule: any, managerUserId: string, approved: boolean): void => {
   const messageText = `${approved ? '승인' : '거부'} 완료
 
 교수명: ${schedule.professor_name}
@@ -41,27 +47,33 @@ export const sendApprovalComplete = async (schedule: any, managerUserId: string,
 
 ${approved ? '요청하신 작업을 진행하실 수 있습니다.' : '요청이 거부되었습니다. 문의사항이 있으시면 연락주세요.'}`;
 
-  try {
-    const response = await fetch('/api/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'approval_complete',
-        targetUsers: [managerUserId],
-        message: messageText
-      })
-    });
+  console.log('📨 승인 완료 메시지 발송 시작 (백그라운드)');
 
-    const result = await response.json();
-    return result.success;
-  } catch (error) {
-    console.error('승인 완료 메시지 발송 실패:', error);
-    return false;
-  }
+  // ✅ 백그라운드 발송 (await 없음)
+  fetch('/api/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'approval_complete',
+      targetUsers: [managerUserId],
+      message: messageText
+    })
+  })
+    .then(response => response.json())
+    .then(result => {
+      if (result.success) {
+        console.log('✅ 승인 완료 메시지 발송 성공');
+      } else {
+        console.warn('⚠️ 승인 완료 메시지 발송 실패:', result.error);
+      }
+    })
+    .catch(error => {
+      console.error('❌ 승인 완료 메시지 발송 오류:', error);
+    });
 };
 
-// 3. 전체 공지 메시지 (스케줄 등록 기간 안내)
-export const sendScheduleNotice = async (noticeType: 'start' | 'end' | 'reminder') => {
+// ✅ 3. 전체 공지 메시지 (스케줄 등록 기간 안내) - 백그라운드 처리
+export const sendScheduleNotice = (noticeType: 'start' | 'end' | 'reminder'): void => {
   let messageText = '';
   
   switch (noticeType) {
@@ -92,42 +104,54 @@ export const sendScheduleNotice = async (noticeType: 'start' | 'end' | 'reminder
       break;
   }
 
-  try {
-    const response = await fetch('/api/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'schedule_notice',
-        message: messageText
-      })
-    });
+  console.log('📨 공지 메시지 발송 시작 (백그라운드)');
 
-    const result = await response.json();
-    return result.success;
-  } catch (error) {
-    console.error('전체 공지 메시지 발송 실패:', error);
-    return false;
-  }
+  // ✅ 백그라운드 발송 (await 없음)
+  fetch('/api/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'schedule_notice',
+      message: messageText
+    })
+  })
+    .then(response => response.json())
+    .then(result => {
+      if (result.success) {
+        console.log('✅ 공지 메시지 발송 성공');
+      } else {
+        console.warn('⚠️ 공지 메시지 발송 실패:', result.error);
+      }
+    })
+    .catch(error => {
+      console.error('❌ 공지 메시지 발송 오류:', error);
+    });
 };
 
-// 4. 일반 메시지 발송 (범용)
-export const sendMessage = async (messageText: string, targetType: 'users' | 'channel', targets: string[]) => {
-  try {
-    const response = await fetch('/api/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: targetType === 'users' ? 'approval_complete' : 'schedule_notice',
-        targetUsers: targetType === 'users' ? targets : undefined,
-        channelId: targetType === 'channel' ? targets[0] : undefined,
-        message: messageText
-      })
-    });
+// ✅ 4. 일반 메시지 발송 (범용) - 백그라운드 처리
+export const sendMessage = (messageText: string, targetType: 'users' | 'channel', targets: string[]): void => {
+  console.log('📨 메시지 발송 시작 (백그라운드)');
 
-    const result = await response.json();
-    return result.success;
-  } catch (error) {
-    console.error('메시지 발송 실패:', error);
-    return false;
-  }
+  // ✅ 백그라운드 발송 (await 없음)
+  fetch('/api/message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: targetType === 'users' ? 'approval_complete' : 'schedule_notice',
+      targetUsers: targetType === 'users' ? targets : undefined,
+      channelId: targetType === 'channel' ? targets[0] : undefined,
+      message: messageText
+    })
+  })
+    .then(response => response.json())
+    .then(result => {
+      if (result.success) {
+        console.log('✅ 메시지 발송 성공');
+      } else {
+        console.warn('⚠️ 메시지 발송 실패:', result.error);
+      }
+    })
+    .catch(error => {
+      console.error('❌ 메시지 발송 오류:', error);
+    });
 };

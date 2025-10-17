@@ -1,3 +1,4 @@
+//src/pages/api/message.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 export const config = {
@@ -7,6 +8,9 @@ export const config = {
 interface MessageRequest {
   type: string;
   message: string;
+  scheduleData?: any;
+  targetUsers?: string[];
+  channelId?: string;
 }
 
 export default async function handler(req: NextRequest) {
@@ -32,15 +36,18 @@ export default async function handler(req: NextRequest) {
 
   try {
     const body = await req.json() as MessageRequest;
-    const { message } = body;
+    const { message, type } = body;
+    
+    console.log(`📨 메시지 발송 요청 (type: ${type})`);
     
     const naverWorksUrl = 'https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message';
     
-    // ✅ 타임아웃 20초로 연장
+    // ✅ 타임아웃 60초로 연장 (안전장치)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
+      console.warn('⚠️ 타임아웃 60초 도달');
       controller.abort();
-    }, 20000);  // 20초
+    }, 60000);  // 60초
 
     try {
       const response = await fetch(naverWorksUrl, {
@@ -57,6 +64,7 @@ export default async function handler(req: NextRequest) {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(`❌ 네이버웍스 응답 오류 (${response.status}):`, errorText.substring(0, 200));
         
         return NextResponse.json(
           {
@@ -69,6 +77,7 @@ export default async function handler(req: NextRequest) {
       }
 
       const data = await response.json();
+      console.log(`✅ 네이버웍스 메시지 발송 성공 (type: ${type})`);
 
       return NextResponse.json(
         {
@@ -81,6 +90,7 @@ export default async function handler(req: NextRequest) {
 
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
+      console.error('❌ 네이버웍스 fetch 오류:', fetchError.message);
 
       return NextResponse.json(
         {
@@ -93,6 +103,8 @@ export default async function handler(req: NextRequest) {
     }
 
   } catch (error: any) {
+    console.error('❌ 메시지 처리 오류:', error);
+    
     return NextResponse.json(
       {
         success: false,
