@@ -41,10 +41,10 @@ const breakTimeOptions = generateBreakTimeOptions();
 // 휴식시간 범위 제한 옵션 생성 (촬영 시간 내에서만)
 const generateBreakTimeOptionsInRange = (startTime: string, endTime: string) => {
   if (!startTime || !endTime) return breakTimeOptions;
-  
+
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
-  
+
   return breakTimeOptions.filter(time => {
     const timeMinutes = timeToMinutes(time);
     return timeMinutes > startMinutes && timeMinutes < endMinutes;
@@ -54,19 +54,19 @@ const generateBreakTimeOptionsInRange = (startTime: string, endTime: string) => 
 // 수정된 날짜 옵션 생성 (주말 포함)
 const generateAvailableDates = (testDate?: string | null, devMode?: boolean) => {
   const baseToday = testDate ? new Date(testDate) : new Date();
-  
+
   if (devMode) {
     // 개발모드: 과거 30일부터 미래 90일까지 모든 날짜
     const dates = [];
     for (let i = -30; i <= 90; i++) {
       const date = new Date(baseToday);
       date.setDate(baseToday.getDate() + i);
-      
+
       const dateStr = date.toISOString().split('T')[0];
       const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
       const dayName = dayNames[date.getDay()];
       const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
-      
+
       dates.push({
         value: dateStr,
         label: `${monthDay}(${dayName})${i < 0 ? ' [과거]' : i === 0 ? ' [오늘]' : ''}`
@@ -74,37 +74,37 @@ const generateAvailableDates = (testDate?: string | null, devMode?: boolean) => 
     }
     return dates;
   }
-  
+
   // 일반모드: 다음 주 월요일부터 2주간 모든 날짜 (주말 포함)
   const currentDay = baseToday.getDay();
   const daysUntilNextMonday = (8 - currentDay) % 7 || 7;
   const nextMonday = new Date(baseToday);
   nextMonday.setDate(baseToday.getDate() + daysUntilNextMonday);
-  
+
   const availableDates = [];
-  
+
   for (let i = 0; i < 14; i++) {
     const date = new Date(nextMonday);
     date.setDate(nextMonday.getDate() + i);
-    
+
     const dateStr = date.toISOString().split('T')[0];
     const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
     const dayName = dayNames[date.getDay()];
     const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
-    
+
     availableDates.push({
       value: dateStr,
       label: `${monthDay}(${dayName})`
     });
   }
-  
+
   return availableDates;
 };
 
 // 개발 테스트 모드 체크
 const isDevelopmentMode = () => {
-  return process.env.NODE_ENV === 'development' || 
-         localStorage.getItem('dev_mode') === 'true';
+  return process.env.NODE_ENV === 'development' ||
+    localStorage.getItem('dev_mode') === 'true';
 };
 
 // 시간을 분으로 변환
@@ -129,12 +129,12 @@ const minutesToTime = (minutes: number): string => {
 // 휴식시간 자동 계산 함수 수정
 const calculateBreakDuration = (startTime: string, endTime: string): number => {
   if (!startTime || !endTime) return 0;
-  
+
   try {
     const startMinutes = timeToMinutes(startTime);
     const endMinutes = timeToMinutes(endTime);
     const duration = endMinutes - startMinutes;
-    
+
     return Math.max(0, duration);
   } catch (error) {
     console.error('휴식시간 계산 오류:', error);
@@ -149,26 +149,26 @@ const findAvailableTimeSlots = (
   durationMinutes: number
 ) => {
   const workStart = 9 * 60;   // 09:00
-  const workEnd   = 22 * 60;  // 22:00
-  const suggestions: {start: string; end: string}[] = [];
+  const workEnd = 22 * 60;  // 22:00
+  const suggestions: { start: string; end: string }[] = [];
 
   // 30분 단위로 훑기
   for (let t = workStart; t <= workEnd - durationMinutes; t += 30) {
     const slotStart = t;
-    const slotEnd   = t + durationMinutes;
+    const slotEnd = t + durationMinutes;
 
     // 슬롯이 모든 스튜디오에서 겹치면 → 사용 불가
     const slotConflict = schedules.some(s => {
       if (!compatibleStudioIds.includes(s.sub_location_id)) return false;
       const sStart = timeToMinutes(s.start_time);
-      const sEnd   = timeToMinutes(s.end_time);
+      const sEnd = timeToMinutes(s.end_time);
       return (slotStart < sEnd) && (sStart < slotEnd);
     });
 
     if (!slotConflict) {
       suggestions.push({
         start: minutesToTime(slotStart),
-        end  : minutesToTime(slotEnd)
+        end: minutesToTime(slotEnd)
       });
       if (suggestions.length === 3) break;          // 최대 3개만
     }
@@ -192,7 +192,7 @@ const checkBreakTimeRecommendation = (
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = timeToMinutes(endTime);
   const durationMinutes = endMinutes - startMinutes;
-  
+
   if (durationMinutes >= 240) { // 4시간 이상
     if (startMinutes <= timeToMinutes('13:00') && endMinutes >= timeToMinutes('17:00')) {
       return {
@@ -205,7 +205,7 @@ const checkBreakTimeRecommendation = (
         }
       };
     }
-    
+
     if (startMinutes <= timeToMinutes('19:00') && endMinutes >= timeToMinutes('23:00')) {
       return {
         shouldRecommend: true,
@@ -217,11 +217,11 @@ const checkBreakTimeRecommendation = (
         }
       };
     }
-    
+
     const middleTime = startMinutes + Math.floor(durationMinutes / 2);
     const breakStart = minutesToTime(Math.max(middleTime - 30, startMinutes + 60));
     const breakEnd = minutesToTime(Math.min(middleTime + 30, endMinutes - 60));
-    
+
     return {
       shouldRecommend: true,
       reason: '4시간 이상 촬영으로 휴식시간을 권장합니다',
@@ -232,7 +232,7 @@ const checkBreakTimeRecommendation = (
       }
     };
   }
-  
+
   return {
     shouldRecommend: false,
     reason: '4시간 미만 촬영으로 휴식시간이 필수는 아닙니다'
@@ -255,120 +255,120 @@ const generateAdminMessage = (
 ) => {
   const typeMap = {
     approval: '승인요청',
-    edit: '수정요청', 
+    edit: '수정요청',
     cancel: '취소요청',
     reapproval: '재승인요청'
   };
 
-const generateNotificationMessage = async (requestType, scheduleId, reason) => {
-  try {
-    console.log('🔧 메시지 생성 시작:', { requestType, scheduleId });
+  const generateNotificationMessage = async (requestType, scheduleId, reason) => {
+    try {
+      console.log('🔧 메시지 생성 시작:', { requestType, scheduleId });
 
-    // 1. 현재 사용자의 부서 정보 조회
-    const { data: { session } } = await supabase.auth.getSession();
-    const currentUserId = session?.user?.id;
-    
-    if (!currentUserId) {
-      throw new Error('로그인된 사용자를 찾을 수 없습니다.');
-    }
+      // 1. 현재 사용자의 부서 정보 조회
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id;
 
-    // 2. 사용자 정보 + 소속(organizations) 조회
-    const { data: userInfo, error: userError } = await supabase
-      .from('users')
-      .select(`
+      if (!currentUserId) {
+        throw new Error('로그인된 사용자를 찾을 수 없습니다.');
+      }
+
+      // 2. 사용자 정보 + 소속(organizations) 조회
+      const { data: userInfo, error: userError } = await supabase
+        .from('users')
+        .select(`
         name,
         organizations:organizations_id ( name )
       `)
-      .eq('auth_user_id', currentUserId)
-      .single();
+        .eq('auth_user_id', currentUserId)
+        .single();
 
-    if (userError) {
-      console.warn('사용자 정보 조회 실패:', userError);
-      // 폴백: localStorage에서 가져오기
-      var fallbackName = localStorage.getItem('userName') || '관리자';
-      var fallbackDept = '관리부서';
-    }
+      if (userError) {
+        console.warn('사용자 정보 조회 실패:', userError);
+        // 폴백: localStorage에서 가져오기
+        var fallbackName = localStorage.getItem('userName') || '관리자';
+        var fallbackDept = '관리부서';
+      }
 
-    // 3. 스케줄 정보 + 스튜디오명 조회
-    const { data: schedule, error: scheduleError } = await supabase
-      .from('schedules')
-      .select(`
+      // 3. 스케줄 정보 + 스튜디오명 조회
+      const { data: schedule, error: scheduleError } = await supabase
+        .from('schedules')
+        .select(`
         *,
         sub_locations:sub_location_id ( name )
       `)
-      .eq('id', scheduleId)
-      .single();
+        .eq('id', scheduleId)
+        .single();
 
-    if (scheduleError || !schedule) {
-      throw new Error('스케줄 정보를 찾을 수 없습니다.');
+      if (scheduleError || !schedule) {
+        throw new Error('스케줄 정보를 찾을 수 없습니다.');
+      }
+
+      // 4. 타입 매핑
+      const typeMap = {
+        'modification_request': '수정 요청',
+        'cancellation_request': '취소 요청',
+        'approval_request': '승인 요청'
+      };
+
+      // 5. 동적 메시지 생성
+      const userName = userInfo?.name || fallbackName;
+      const deptName = userInfo?.organizations?.name || fallbackDept;
+
+      let message = `[촬영 ${typeMap[requestType]}] ${deptName} ${userName}\\n\\n`;
+      message += `교수명: ${schedule.professor_name || '미상'}\\n`;
+      message += `날짜: ${schedule.shoot_date || '미상'}\\n`;
+      message += `시간: ${schedule.start_time?.substring(0, 5) || '미상'}~${schedule.end_time?.substring(0, 5) || '미상'}\\n`;
+
+      // 스튜디오 정보 처리
+      const studioInfo = schedule.sub_locations?.name
+        ? `${schedule.sub_locations.name}번 스튜디오`
+        : `스튜디오 ${schedule.sub_location_id || '미상'}`;
+      message += `스튜디오: ${studioInfo}\\n`;
+
+      message += `강의명: ${schedule.course_name || '미상'}\\n\\n`;
+
+      if (reason && reason.trim()) {
+        message += `사유: ${reason}\\n\\n`;
+      }
+
+      message += `상세 확인 및 승인처리\\n`;
+      message += `https://schedule.eduwill.net/admin?scheduleId=${schedule.id}`;
+
+      console.log('✅ 메시지 생성 성공:', message.substring(0, 100) + '...');
+      return message;
+
+    } catch (error) {
+      console.error('❌ 메시지 생성 실패:', error);
+
+      // 최종 폴백 - 하드코딩 없는 기본 메시지
+      const fallbackName = localStorage.getItem('userName') || '관리자';
+      const fallbackMessage = `[촬영 요청] ${fallbackName}\\n\\n스케줄 ID: ${scheduleId}\\n사유: ${reason || '없음'}\\n\\n상세 확인: https://schedule.eduwill.net/admin?scheduleId=${scheduleId}`;
+
+      return fallbackMessage;
     }
-
-    // 4. 타입 매핑
-    const typeMap = {
-      'modification_request': '수정 요청',
-      'cancellation_request': '취소 요청',
-      'approval_request': '승인 요청'
-    };
-
-    // 5. 동적 메시지 생성
-    const userName = userInfo?.name || fallbackName;
-    const deptName = userInfo?.organizations?.name || fallbackDept;
-    
-    let message = `[촬영 ${typeMap[requestType]}] ${deptName} ${userName}\\n\\n`;
-    message += `교수명: ${schedule.professor_name || '미상'}\\n`;
-    message += `날짜: ${schedule.shoot_date || '미상'}\\n`;
-    message += `시간: ${schedule.start_time?.substring(0,5) || '미상'}~${schedule.end_time?.substring(0,5) || '미상'}\\n`;
-    
-    // 스튜디오 정보 처리
-    const studioInfo = schedule.sub_locations?.name 
-      ? `${schedule.sub_locations.name}번 스튜디오`
-      : `스튜디오 ${schedule.sub_location_id || '미상'}`;
-    message += `스튜디오: ${studioInfo}\\n`;
-    
-    message += `강의명: ${schedule.course_name || '미상'}\\n\\n`;
-
-    if (reason && reason.trim()) {
-      message += `사유: ${reason}\\n\\n`;
-    }
-
-    message += `상세 확인 및 승인처리\\n`;
-    message += `https://schedule.eduwill.net/admin?scheduleId=${schedule.id}`;
-
-    console.log('✅ 메시지 생성 성공:', message.substring(0, 100) + '...');
-    return message;
-
-  } catch (error) {
-    console.error('❌ 메시지 생성 실패:', error);
-    
-    // 최종 폴백 - 하드코딩 없는 기본 메시지
-    const fallbackName = localStorage.getItem('userName') || '관리자';
-    const fallbackMessage = `[촬영 요청] ${fallbackName}\\n\\n스케줄 ID: ${scheduleId}\\n사유: ${reason || '없음'}\\n\\n상세 확인: https://schedule.eduwill.net/admin?scheduleId=${scheduleId}`;
-    
-    return fallbackMessage;
   }
-}
 
 };
 
 
 
 // 개발 테스트 모드 컴포넌트
-const DevTestMode = ({ 
-  onClose, 
-  onDateSelect, 
-  testDate 
-}: { 
-  onClose: () => void; 
+const DevTestMode = ({
+  onClose,
+  onDateSelect,
+  testDate
+}: {
+  onClose: () => void;
   onDateSelect: (date: string) => void;
   testDate: string | null;
 }) => {
   const [userDate, setUserDate] = useState(testDate || '');
   const [currentTime, setCurrentTime] = useState('');
-  
+
   useEffect(() => {
     setUserDate(testDate || '');
   }, [testDate]);
-  
+
   useEffect(() => {
     const updateTime = () => {
       setCurrentTime(new Date().toLocaleString('ko-KR'));
@@ -392,9 +392,9 @@ const DevTestMode = ({
       maxWidth: '320px',
       boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
     }}>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '8px'
       }}>
@@ -412,15 +412,15 @@ const DevTestMode = ({
           ×
         </button>
       </div>
-      
+
       <div style={{ marginBottom: '8px', fontSize: '10px', color: '#9ca3af' }}>
         실제 시간: {currentTime}
       </div>
-      
+
       <div style={{ marginBottom: '8px', fontSize: '10px', color: '#9ca3af' }}>
         현재 테스트 날짜: <strong>{testDate || '(미지정)'}</strong>
       </div>
-      
+
       <div style={{ marginBottom: '12px' }}>
         <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px' }}>
           테스트 날짜 설정:
@@ -461,11 +461,11 @@ const DevTestMode = ({
           날짜 적용
         </button>
       </div>
-      
+
       <div style={{ fontSize: '10px', color: '#d1d5db', lineHeight: '1.4' }}>
-        Alt+Shift+D: 모드 토글<br/>
-        과거/미래 모든 날짜 선택 가능<br/>
-        localStorage.dev_mode = 'true'<br/>
+        Alt+Shift+D: 모드 토글<br />
+        과거/미래 모든 날짜 선택 가능<br />
+        localStorage.dev_mode = 'true'<br />
         정책 테스트 가능
       </div>
     </div>
@@ -473,10 +473,10 @@ const DevTestMode = ({
 };
 
 // 제작센터 연락 모달
-const ContactModal = ({ 
-  open, 
-  onClose, 
-  scheduleInfo 
+const ContactModal = ({
+  open,
+  onClose,
+  scheduleInfo
 }: {
   open: boolean;
   onClose: () => void;
@@ -516,9 +516,9 @@ const ContactModal = ({
           textAlign: 'center',
           marginBottom: '16px'
         }}>
-          <h3 style={{ 
-            margin: '0 0 8px 0', 
-            fontSize: 'clamp(16px, 4vw, 18px)', 
+          <h3 style={{
+            margin: '0 0 8px 0',
+            fontSize: 'clamp(16px, 4vw, 18px)',
             fontWeight: '600',
             color: '#1f2937'
           }}>
@@ -538,17 +538,17 @@ const ContactModal = ({
             color: '#475569',
             lineHeight: '1.5'
           }}>
-            <strong>스케줄 정보:</strong><br/>
+            <strong>스케줄 정보:</strong><br />
             {scheduleInfo.professorName && (
-              <>교수명: {scheduleInfo.professorName}<br/></>
+              <>교수명: {scheduleInfo.professorName}<br /></>
             )}
-            강좌명: {scheduleInfo.courseName || '미입력'}<br/>
-            촬영일: {scheduleInfo.date}<br/>
+            강좌명: {scheduleInfo.courseName || '미입력'}<br />
+            촬영일: {scheduleInfo.date}<br />
             {scheduleInfo.startTime && scheduleInfo.endTime && (
-              <>촬영시간: {scheduleInfo.startTime} ~ {scheduleInfo.endTime}<br/></>
+              <>촬영시간: {scheduleInfo.startTime} ~ {scheduleInfo.endTime}<br /></>
             )}
-            <br/>
-            <strong>촬영확정 또는 온라인 수정 기간이 종료되었습니다.</strong><br/>
+            <br />
+            <strong>촬영확정 또는 온라인 수정 기간이 종료되었습니다.</strong><br />
             수정이 필요한 경우 제작센터에 변경사항을 전달해 주시면 확인해드리겠습니다.
           </div>
         </div>
@@ -566,17 +566,17 @@ const ContactModal = ({
             fontWeight: '500',
             textAlign: 'center'
           }}>
-            제작센터 연락처<br/>
+            제작센터 연락처<br />
             <strong style={{ fontSize: 'clamp(14px, 3.5vw, 16px)' }}>
               02-1234-5678
-            </strong><br/>
+            </strong><br />
             (평일 09:00 ~ 18:00)
           </div>
         </div>
 
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center' 
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center'
         }}>
           <button
             onClick={onClose}
@@ -600,12 +600,12 @@ const ContactModal = ({
 };
 
 // 승인 요청 모달
-const ApprovalRequestModal = ({ 
-  open, 
-  onClose, 
+const ApprovalRequestModal = ({
+  open,
+  onClose,
   onConfirm,
   schedule,
-  requestType 
+  requestType
 }: {
   open: boolean;
   onClose: () => void;
@@ -647,9 +647,9 @@ const ApprovalRequestModal = ({
         padding: '24px',
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
       }}>
-        <h3 style={{ 
-          margin: '0 0 16px 0', 
-          fontSize: '18px', 
+        <h3 style={{
+          margin: '0 0 16px 0',
+          fontSize: '18px',
           fontWeight: '600',
           color: '#1f2937'
         }}>
@@ -664,18 +664,18 @@ const ApprovalRequestModal = ({
           border: '1px solid #e2e8f0'
         }}>
           <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5' }}>
-            <strong>스케줄 정보:</strong><br/>
-            교수명: {schedule?.professor_name}<br/>
-            촬영일: {schedule?.shoot_date}<br/>
-            촬영시간: {schedule?.start_time?.substring(0,5)} ~ {schedule?.end_time?.substring(0,5)}<br/>
+            <strong>스케줄 정보:</strong><br />
+            교수명: {schedule?.professor_name}<br />
+            촬영일: {schedule?.shoot_date}<br />
+            촬영시간: {schedule?.start_time?.substring(0, 5)} ~ {schedule?.end_time?.substring(0, 5)}<br />
             과정명: {schedule?.course_name || '없음'}
           </div>
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ 
-            display: 'block', 
-            marginBottom: '6px', 
+          <label style={{
+            display: 'block',
+            marginBottom: '6px',
             fontWeight: '500',
             color: '#374151'
           }}>
@@ -698,10 +698,10 @@ const ApprovalRequestModal = ({
           />
         </div>
 
-        <div style={{ 
-          display: 'flex', 
-          gap: '12px', 
-          justifyContent: 'flex-end' 
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          justifyContent: 'flex-end'
         }}>
           <button
             onClick={onClose}
@@ -764,9 +764,9 @@ const ScheduleDetailModal = ({
 }) => {
   // 관리자 권한 확인 함수
   const isAdmin = () => {
-    return userRoles?.includes('academy_manager') || 
-           userRoles?.includes('studio_manager') || 
-           userRoles?.includes('system_admin');
+    return userRoles?.includes('academy_manager') ||
+      userRoles?.includes('studio_manager') ||
+      userRoles?.includes('system_admin');
   };
 
   if (!open || !schedule) return null;
@@ -782,25 +782,25 @@ const ScheduleDetailModal = ({
       const sortedSchedules = schedule.grouped_schedules.sort((a, b) => a.sequence_order - b.sequence_order);
       const firstSchedule = sortedSchedules[0];
       const lastSchedule = sortedSchedules[sortedSchedules.length - 1];
-      
+
       return {
-        full: `${firstSchedule.start_time?.substring(0,5)} ~ ${lastSchedule.end_time?.substring(0,5)}`,
+        full: `${firstSchedule.start_time?.substring(0, 5)} ~ ${lastSchedule.end_time?.substring(0, 5)}`,
         segments: sortedSchedules.map((s, index) => ({
           label: `${index + 1}차`,
-          time: `${s.start_time?.substring(0,5)} ~ ${s.end_time?.substring(0,5)}`
+          time: `${s.start_time?.substring(0, 5)} ~ ${s.end_time?.substring(0, 5)}`
         })),
-        breakTime: schedule.break_time_enabled && schedule.break_start_time && schedule.break_end_time ? 
-          `${schedule.break_start_time?.substring(0,5)} ~ ${schedule.break_end_time?.substring(0,5)}` : null
+        breakTime: schedule.break_time_enabled && schedule.break_start_time && schedule.break_end_time ?
+          `${schedule.break_start_time?.substring(0, 5)} ~ ${schedule.break_end_time?.substring(0, 5)}` : null
       };
     }
-    
+
     return {
-      full: `${schedule.start_time?.substring(0,5)} ~ ${schedule.end_time?.substring(0,5)}`,
+      full: `${schedule.start_time?.substring(0, 5)} ~ ${schedule.end_time?.substring(0, 5)}`,
       segments: [],
       breakTime: null
     };
   };
-  
+
   const timeDisplay = getDisplayTimeRange(schedule);
 
   return (
@@ -828,28 +828,28 @@ const ScheduleDetailModal = ({
         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
       }}>
         {/* 헤더 */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
           marginBottom: '20px',
           paddingBottom: '12px',
           borderBottom: '1px solid #e5e7eb'
         }}>
-          <h3 style={{ 
-            margin: 0, 
-            fontSize: '18px', 
+          <h3 style={{
+            margin: 0,
+            fontSize: '18px',
             fontWeight: '600',
             color: '#1f2937'
           }}>
             스케줄 상세 정보
           </h3>
-          <button 
-            onClick={onClose} 
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              fontSize: '24px', 
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '24px',
               cursor: 'pointer',
               color: '#6b7280'
             }}
@@ -875,87 +875,87 @@ const ScheduleDetailModal = ({
 
         {/* 기본 정보 */}
         <div style={{ marginBottom: '24px' }}>
-          <h4 style={{ 
-            margin: '0 0 12px 0', 
-            fontSize: '16px', 
+          <h4 style={{
+            margin: '0 0 12px 0',
+            fontSize: '16px',
             fontWeight: '600',
             color: '#374151'
           }}>
             기본 정보
           </h4>
-          
+
           <div style={{ display: 'grid', gap: '8px' }}>
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 교수명:
               </span>
               <span style={{ color: '#1f2937' }}>{schedule.professor_name}</span>
             </div>
-            
+
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 과정명:
               </span>
               <span style={{ color: '#1f2937' }}>{schedule.course_name || '미입력'}</span>
             </div>
-            
+
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 과정코드:
               </span>
               <span style={{ color: '#1f2937' }}>{schedule.course_code || '미입력'}</span>
             </div>
-            
+
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 촬영일:
               </span>
               <span style={{ color: '#1f2937' }}>{schedule.shoot_date}</span>
             </div>
-            
+
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 전체시간:
               </span>
               <span style={{ color: '#1f2937' }}>{timeDisplay.full}</span>
             </div>
-            
+
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 촬영형식:
               </span>
               <span style={{ color: '#1f2937' }}>{schedule.shooting_type}</span>
             </div>
-            
+
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '80px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '80px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 스튜디오:
               </span>
@@ -969,15 +969,15 @@ const ScheduleDetailModal = ({
         {/* 개선된 촬영 일정 상세 표시 */}
         {schedule.is_grouped && schedule.grouped_schedules && schedule.grouped_schedules.length > 1 && (
           <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ 
-              margin: '0 0 12px 0', 
-              fontSize: '16px', 
+            <h4 style={{
+              margin: '0 0 12px 0',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#374151'
             }}>
               촬영 일정 상세
             </h4>
-            
+
             <div style={{
               padding: '12px',
               backgroundColor: '#f0f9ff',
@@ -994,10 +994,10 @@ const ScheduleDetailModal = ({
                 color: '#1e40af'
               }}>
                 <div style={{ fontWeight: '500' }}>
-                  1차 촬영: {schedule.grouped_schedules[0]?.start_time?.substring(0,5)} ~ {schedule.break_start_time?.substring(0,5)}
+                  1차 촬영: {schedule.grouped_schedules[0]?.start_time?.substring(0, 5)} ~ {schedule.break_start_time?.substring(0, 5)}
                 </div>
               </div>
-              
+
               {/* 휴식시간 */}
               {schedule.break_time_enabled && schedule.break_start_time && schedule.break_end_time && (
                 <div style={{
@@ -1009,10 +1009,10 @@ const ScheduleDetailModal = ({
                   color: '#7c3aed',
                   fontWeight: '500'
                 }}>
-                  휴식시간: {schedule.break_start_time?.substring(0,5)} ~ {schedule.break_end_time?.substring(0,5)}
+                  휴식시간: {schedule.break_start_time?.substring(0, 5)} ~ {schedule.break_end_time?.substring(0, 5)}
                 </div>
               )}
-              
+
               {/* 2차 촬영 */}
               {schedule.grouped_schedules[1] && (
                 <div style={{
@@ -1023,7 +1023,7 @@ const ScheduleDetailModal = ({
                   color: '#1e40af'
                 }}>
                   <div style={{ fontWeight: '500' }}>
-                    2차 촬영: {schedule.break_end_time?.substring(0,5)} ~ {schedule.grouped_schedules[1]?.end_time?.substring(0,5)}
+                    2차 촬영: {schedule.break_end_time?.substring(0, 5)} ~ {schedule.grouped_schedules[1]?.end_time?.substring(0, 5)}
                   </div>
                 </div>
               )}
@@ -1034,9 +1034,9 @@ const ScheduleDetailModal = ({
         {/* 비고 */}
         {schedule.notes && (
           <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ 
-              margin: '0 0 8px 0', 
-              fontSize: '16px', 
+            <h4 style={{
+              margin: '0 0 8px 0',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#374151'
             }}>
@@ -1058,9 +1058,9 @@ const ScheduleDetailModal = ({
         {/* 취소 사유 표시 */}
         {(isCancelled || schedule.approval_status === 'cancelled') && schedule.cancellation_reason && (
           <div style={{ marginBottom: '24px' }}>
-            <h4 style={{ 
-              margin: '0 0 8px 0', 
-              fontSize: '16px', 
+            <h4 style={{
+              margin: '0 0 8px 0',
+              fontSize: '16px',
               fontWeight: '600',
               color: '#dc2626'
             }}>
@@ -1082,21 +1082,21 @@ const ScheduleDetailModal = ({
 
         {/* 관리 정보 */}
         <div style={{ marginBottom: '24px' }}>
-          <h4 style={{ 
-            margin: '0 0 12px 0', 
-            fontSize: '16px', 
+          <h4 style={{
+            margin: '0 0 12px 0',
+            fontSize: '16px',
             fontWeight: '600',
             color: '#374151'
           }}>
             관리 정보
           </h4>
-          
+
           <div style={{ display: 'grid', gap: '8px', fontSize: '13px' }}>
             <div style={{ display: 'flex' }}>
-              <span style={{ 
-                minWidth: '100px', 
-                fontWeight: '500', 
-                color: '#6b7280' 
+              <span style={{
+                minWidth: '100px',
+                fontWeight: '500',
+                color: '#6b7280'
               }}>
                 등록일시:
               </span>
@@ -1104,13 +1104,13 @@ const ScheduleDetailModal = ({
                 {schedule.created_at ? new Date(schedule.created_at).toLocaleString('ko-KR') : '미상'}
               </span>
             </div>
-            
+
             {schedule.updated_at && schedule.updated_at !== schedule.created_at && (
               <div style={{ display: 'flex' }}>
-                <span style={{ 
-                  minWidth: '100px', 
-                  fontWeight: '500', 
-                  color: '#6b7280' 
+                <span style={{
+                  minWidth: '100px',
+                  fontWeight: '500',
+                  color: '#6b7280'
                 }}>
                   승인일시:
                 </span>
@@ -1122,10 +1122,10 @@ const ScheduleDetailModal = ({
 
             {schedule.modification_reason && (
               <div style={{ display: 'flex' }}>
-                <span style={{ 
-                  minWidth: '100px', 
-                  fontWeight: '500', 
-                  color: '#6b7280' 
+                <span style={{
+                  minWidth: '100px',
+                  fontWeight: '500',
+                  color: '#6b7280'
                 }}>
                   수정내역:
                 </span>
@@ -1138,9 +1138,9 @@ const ScheduleDetailModal = ({
         </div>
 
         {/* 버튼 영역 - 수정된 조건 */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '12px', 
+        <div style={{
+          display: 'flex',
+          gap: '12px',
           justifyContent: 'flex-end',
           paddingTop: '16px',
           borderTop: '1px solid #e5e7eb'
@@ -1159,55 +1159,55 @@ const ScheduleDetailModal = ({
           >
             닫기
           </button>
-          
+
           {/* modification_approved 포함하여 매니저 수정 가능 */}
-          {canEdit && !isPast && !isCancelled && 
-           (schedule.approval_status === 'approved' || 
-            schedule.approval_status === 'confirmed' || 
-            schedule.approval_status === 'modification_approved') && onEdit && (
-            <button
-              onClick={() => {
-                onEdit();
-                onClose();
-              }}
-              style={{
-                padding: '10px 20px',
-                border: 'none',
-                borderRadius: '6px',
-                backgroundColor: '#059669',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500'
-              }}
-            >
-              수정
-            </button>
-          )}
-          
-          {canEdit && !isPast && !isCancelled && 
-           (schedule.approval_status === 'approved' || 
-            schedule.approval_status === 'confirmed' || 
-            schedule.approval_status === 'modification_approved') && onCancel && (
-            <button
-              onClick={() => {
-                onCancel();
-                onClose();
-              }}
-              style={{
-                padding: '10px 20px',
-                border: 'none',
-                borderRadius: '6px',
-                backgroundColor: '#dc2626',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: '500'
-              }}
-            >
-              취소
-            </button>
-          )}
+          {canEdit && !isPast && !isCancelled &&
+            (schedule.approval_status === 'approved' ||
+              schedule.approval_status === 'confirmed' ||
+              schedule.approval_status === 'modification_approved') && onEdit && (
+              <button
+                onClick={() => {
+                  onEdit();
+                  onClose();
+                }}
+                style={{
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  backgroundColor: '#059669',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                수정
+              </button>
+            )}
+
+          {canEdit && !isPast && !isCancelled &&
+            (schedule.approval_status === 'approved' ||
+              schedule.approval_status === 'confirmed' ||
+              schedule.approval_status === 'modification_approved') && onCancel && (
+              <button
+                onClick={() => {
+                  onCancel();
+                  onClose();
+                }}
+                style={{
+                  padding: '10px 20px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  backgroundColor: '#dc2626',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                취소
+              </button>
+            )}
         </div>
       </div>
     </div>
@@ -1269,7 +1269,7 @@ const EditScheduleModal = ({
         const sortedSchedules = schedule.grouped_schedules.sort((a, b) => a.sequence_order - b.sequence_order);
         const firstSchedule = sortedSchedules[0];
         const secondSchedule = sortedSchedules[1];
-        
+
         if (firstSchedule.end_time && secondSchedule.start_time) {
           breakTimeEnabled = true;
           breakStartTime = normalizeTime(firstSchedule.end_time);
@@ -1295,7 +1295,7 @@ const EditScheduleModal = ({
       const normalizedData = {
         shoot_date: schedule.shoot_date || '',
         start_time: normalizeTime(schedule.start_time),
-        end_time: schedule.is_grouped && schedule.grouped_schedules?.length > 1 
+        end_time: schedule.is_grouped && schedule.grouped_schedules?.length > 1
           ? normalizeTime(schedule.grouped_schedules[schedule.grouped_schedules.length - 1].end_time)
           : normalizeTime(schedule.end_time),
         professor_name: schedule.professor_name || '',
@@ -1328,12 +1328,12 @@ const EditScheduleModal = ({
   // 휴식시간 실시간 계산
   const handleBreakTimeChange = (field: 'break_start_time' | 'break_end_time', value: string) => {
     const newData = { ...editData, [field]: value };
-    
+
     if (newData.break_start_time && newData.break_end_time) {
       const duration = calculateBreakDuration(newData.break_start_time, newData.break_end_time);
       newData.break_duration_minutes = duration;
     }
-    
+
     setEditData(newData);
   };
 
@@ -1396,28 +1396,28 @@ const EditScheduleModal = ({
         boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
       }}>
         {/* 헤더 */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
           marginBottom: '16px',
           paddingBottom: '8px',
           borderBottom: '1px solid #e5e7eb'
         }}>
-          <h3 style={{ 
-            margin: 0, 
-            fontSize: '18px', 
-            fontWeight: '600' 
+          <h3 style={{
+            margin: 0,
+            fontSize: '18px',
+            fontWeight: '600'
           }}>
             스케줄 수정
           </h3>
-          <button 
-            onClick={onClose} 
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              fontSize: '24px', 
-              cursor: 'pointer' 
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '24px',
+              cursor: 'pointer'
             }}
           >
             ×
@@ -1426,7 +1426,7 @@ const EditScheduleModal = ({
 
         {/* 육하원칙 순서로 재배열된 폼 */}
         <div style={{ display: 'grid', gap: '12px' }}>
-          
+
           {/* 1. 누가(Who): 교수명 */}
           <div>
             <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>
@@ -1662,9 +1662,9 @@ const EditScheduleModal = ({
                   border: '1px solid #dbeafe'
                 }}>
                   <div style={{
-                    display: 'grid', 
+                    display: 'grid',
                     gridTemplateColumns: '1fr auto 1fr auto',
-                    gap: '6px', 
+                    gap: '6px',
                     alignItems: 'center',
                     marginBottom: '8px'
                   }}>
@@ -1684,9 +1684,9 @@ const EditScheduleModal = ({
                         <option key={time} value={time}>{time}</option>
                       ))}
                     </select>
-                    
+
                     <span style={{ fontSize: '12px', padding: '0 2px' }}>~</span>
-                    
+
                     <select
                       value={editData.break_end_time}
                       onChange={(e) => handleBreakTimeChange('break_end_time', e.target.value)}
@@ -1703,13 +1703,13 @@ const EditScheduleModal = ({
                         <option key={time} value={time}>{time}</option>
                       ))}
                     </select>
-                    
+
                     <div style={{
-                      padding: '6px', 
-                      backgroundColor: 'white', 
+                      padding: '6px',
+                      backgroundColor: 'white',
                       borderRadius: '4px',
-                      border: '1px solid #d1d5db', 
-                      fontSize: '12px', 
+                      border: '1px solid #d1d5db',
+                      fontSize: '12px',
                       fontWeight: '500',
                       textAlign: 'center',
                       minWidth: '50px'
@@ -1717,12 +1717,12 @@ const EditScheduleModal = ({
                       {editData.break_duration_minutes}분
                     </div>
                   </div>
-                  
+
                   <div style={{
-                    padding: '6px', 
-                    backgroundColor: 'white', 
+                    padding: '6px',
+                    backgroundColor: 'white',
                     borderRadius: '4px',
-                    fontSize: '11px', 
+                    fontSize: '11px',
                     border: '1px solid #e5e7eb',
                     color: '#6b7280'
                   }}>
@@ -1756,10 +1756,10 @@ const EditScheduleModal = ({
           </div>
 
           {/* 버튼 */}
-          <div style={{ 
-            display: 'flex', 
-            gap: '8px', 
-            justifyContent: 'flex-end', 
+          <div style={{
+            display: 'flex',
+            gap: '8px',
+            justifyContent: 'flex-end',
             marginTop: '8px',
             paddingTop: '12px',
             borderTop: '1px solid #e5e7eb'
@@ -1829,7 +1829,7 @@ export default function ManagerStudioSchedulePage() {
   const [isDevModeActive, setIsDevModeActive] = useState(false);
   const [showDevMode, setShowDevMode] = useState(false);
   const [testDate, setTestDate] = useState<string | null>(null);
-  
+
   // 매니저 정보 상태
   const [managerInfo, setManagerInfo] = useState<any>(null);
   const [userRoles, setUserRoles] = useState<string[]>([]);
@@ -1837,13 +1837,13 @@ export default function ManagerStudioSchedulePage() {
   const [allSchedules, setAllSchedules] = useState<any[]>([]);
   const [totalScheduleCount, setTotalScheduleCount] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  
+
   const [shootingTypes, setShootingTypes] = useState<ShootingType[]>([]);
   const [compatibleStudios, setCompatibleStudios] = useState<any[]>([]);
   const [studioLocations, setStudioLocations] = useState<any[]>([]);
   const [shootingTypeMappings, setShootingTypeMappings] = useState<any[]>([]);
   const [availableDates, setAvailableDates] = useState<any[]>([]);
-  
+
   const [searchFilters, setSearchFilters] = useState({
     professor_name: '',
     start_date: '',
@@ -1852,7 +1852,7 @@ export default function ManagerStudioSchedulePage() {
     offset: 0
   });
   const [isSearching, setIsSearching] = useState(false);
-  
+
   // 수정/취소 모달 상태
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactScheduleInfo, setContactScheduleInfo] = useState({
@@ -1872,11 +1872,11 @@ export default function ManagerStudioSchedulePage() {
   // 수정 모달 상태
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<any>(null);
-  
+
   // 상세보기 모달 상태
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailSchedule, setDetailSchedule] = useState<any>(null);
-  
+
   // 정책 상태
   const [registrationInfo, setRegistrationInfo] = useState({
     startDate: '',
@@ -1884,7 +1884,7 @@ export default function ManagerStudioSchedulePage() {
     weekInfo: '',
     period: ''
   });
-  
+
   const [formData, setFormData] = useState<StudioScheduleFormData>({
     shoot_date: '',
     start_time: '',
@@ -1907,9 +1907,9 @@ export default function ManagerStudioSchedulePage() {
 
   // 승인 상태 판별 함수 추가
   const isScheduleApproved = (schedule: any): boolean => {
-    return schedule.approval_status === 'approved' || 
-           schedule.approval_status === 'confirmed' ||
-           schedule.approval_status === 'modification_approved';
+    return schedule.approval_status === 'approved' ||
+      schedule.approval_status === 'confirmed' ||
+      schedule.approval_status === 'modification_approved';
   };
 
   // 교수 자동완성 핸들러
@@ -1952,7 +1952,7 @@ export default function ManagerStudioSchedulePage() {
           setShowDevMode(newDevModeState);
           setIsDevModeActive(newDevModeState);
           localStorage.setItem('dev_mode', newDevModeState ? 'true' : 'false');
-          
+
           if (!newDevModeState) {
             setTestDate(null);
           }
@@ -1984,28 +1984,28 @@ export default function ManagerStudioSchedulePage() {
   useEffect(() => {
     const baseToday = testDate ? new Date(testDate) : new Date();
     const currentDay = baseToday.getDay();
-    
+
     const daysUntilNextMonday = (8 - currentDay) % 7 || 7;
     const nextMonday = new Date(baseToday);
     nextMonday.setDate(baseToday.getDate() + daysUntilNextMonday);
-    
+
     const startDate = nextMonday.toISOString().split('T')[0];
     const endDate = new Date(nextMonday);
     endDate.setDate(nextMonday.getDate() + 13);
     const endDateStr = endDate.toISOString().split('T')[0];
-    
+
     const startMonth = nextMonday.getMonth() + 1;
     const startDay = nextMonday.getDate();
     const endMonth = endDate.getMonth() + 1;
     const endDay = endDate.getDate();
-    
+
     const regInfo = {
       startDate: startDate,
       endDate: endDateStr,
       weekInfo: `${startMonth}/${startDay} ~ ${endMonth}/${endDay}`,
-      period: `${nextMonday.getFullYear()}년 ${startMonth}월 ${Math.ceil(startDay/7)}주차~${Math.ceil(endDay/7)}주차`
+      period: `${nextMonday.getFullYear()}년 ${startMonth}월 ${Math.ceil(startDay / 7)}주차~${Math.ceil(endDay / 7)}주차`
     };
-    
+
     setRegistrationInfo(regInfo);
 
     const status = SchedulePolicy.getStatusMessage(testDate);
@@ -2029,10 +2029,10 @@ export default function ManagerStudioSchedulePage() {
     const userRole = localStorage.getItem('userRole');
     const userEmail = localStorage.getItem('userEmail');
     const userName = localStorage.getItem('userName');
-    
+
     if (userRole && userEmail) {
       setUserRoles([userRole]);
-      
+
       const mockManagerInfo = {
         id: 301,
         name: userName || '테스트매니저',
@@ -2040,7 +2040,7 @@ export default function ManagerStudioSchedulePage() {
         role: userRole,
         department: '영상개발실'
       };
-      
+
       setManagerInfo(mockManagerInfo);
     }
   };
@@ -2120,13 +2120,13 @@ export default function ManagerStudioSchedulePage() {
 
     // 그룹된 스케줄들을 통합 스케줄 객체로 변환
     const groupedSchedules = [];
-    
+
     groupMap.forEach((groupSchedules, groupId) => {
       // 시간순 정렬
       const sortedSchedules = groupSchedules.sort((a, b) => a.sequence_order - b.sequence_order);
       const firstSchedule = sortedSchedules[0];
       const lastSchedule = sortedSchedules[sortedSchedules.length - 1];
-      
+
       // 통합 스케줄 객체 생성
       const groupedSchedule = {
         ...firstSchedule, // 기본 정보는 첫 번째 스케줄에서
@@ -2143,7 +2143,7 @@ export default function ManagerStudioSchedulePage() {
         break_end_time: firstSchedule.break_end_time,
         break_duration_minutes: firstSchedule.break_duration_minutes
       };
-      
+
       groupedSchedules.push(groupedSchedule);
     });
 
@@ -2168,7 +2168,7 @@ export default function ManagerStudioSchedulePage() {
             cancellation_reason,
             modification_reason,
             deletion_reason
-          `, 
+          `,
           { count: 'exact' }
         )
         .eq('schedule_type', 'studio')
@@ -2193,9 +2193,9 @@ export default function ManagerStudioSchedulePage() {
       if (error) throw error;
 
       const cleanedData = (data || []).filter(schedule => {
-        return schedule.is_active === true && 
-               schedule.approval_status !== 'cancelled' && 
-               !schedule.deletion_reason;
+        return schedule.is_active === true &&
+          schedule.approval_status !== 'cancelled' &&
+          !schedule.deletion_reason;
       });
 
       // 매니저 페이지용 그룹핑 처리
@@ -2270,9 +2270,9 @@ export default function ManagerStudioSchedulePage() {
       if (error) throw error;
 
       const cleanedData = (data || []).filter(schedule => {
-        return schedule.is_active === true && 
-               schedule.approval_status !== 'cancelled' && 
-               !schedule.deletion_reason;
+        return schedule.is_active === true &&
+          schedule.approval_status !== 'cancelled' &&
+          !schedule.deletion_reason;
       });
 
       const groupedSchedules = groupSchedulesForManager(cleanedData);
@@ -2294,354 +2294,354 @@ export default function ManagerStudioSchedulePage() {
   };
 
   // 승인 요청 처리 함수 - 수정됨 (존재하지 않는 필드 제거)
-const handleApprovalRequest = async (reason: string) => {// 승인 요청 처리 함수 - 수정됨
-const handleApprovalRequest = async (reason: string) => {
-  if (!approvalSchedule) return;
+  const handleApprovalRequest = async (reason: string) => {// 승인 요청 처리 함수 - 수정됨
+    const handleApprovalRequest = async (reason: string) => {
+      if (!approvalSchedule) return;
 
-  try {
-    const statusMap = {
-      edit: 'modification_requested',
-      cancel: 'cancellation_requested'
+      try {
+        const statusMap = {
+          edit: 'modification_requested',
+          cancel: 'cancellation_requested'
+        };
+
+        // 그룹 스케줄 처리
+        let scheduleIds = [approvalSchedule.id];
+
+        if (approvalSchedule.schedule_group_id) {
+          const { data: groupSchedules, error: groupError } = await supabase
+            .from('schedules')
+            .select('id')
+            .eq('schedule_group_id', approvalSchedule.schedule_group_id)
+            .eq('is_active', true);
+
+          if (!groupError && groupSchedules) {
+            scheduleIds = groupSchedules.map(s => s.id);
+          }
+        }
+
+        const { error } = await supabase
+          .from('schedules')
+          .update({
+            approval_status: statusMap[approvalRequestType],
+            updated_at: new Date().toISOString(),
+            modification_reason: `${approvalRequestType === 'edit' ? '수정' : '취소'} 요청: ${reason} [요청자: ${managerInfo?.name || '매니저'}]`
+          })
+          .in('id', scheduleIds);
+
+        if (error) throw error;
+
+        // ✅ 메시지 생성 및 발송
+        const message = await generateNotificationMessage(
+          approvalRequestType === 'edit' ? 'modification_request' : 'cancellation_request',
+          approvalSchedule.id,
+          reason
+        );
+
+        if (message) {
+          try {
+            console.log('📨 메시지 발송 시작');
+            sendMessage(message, 'channel', []);  // ✅ messageText → message
+            console.log('✅ 승인요청 메시지 발송 성공');
+          } catch (messageError) {
+            console.error('❌ 승인요청 메시지 발송 실패:', messageError);
+          }
+        }
+
+        alert(`${approvalRequestType === 'edit' ? '수정' : '취소'} 요청이 완료되었습니다.`);
+
+        // 화면 새로고침
+        fetchAllSchedules(false);
+
+      } catch (error) {
+        console.error('승인 요청 실패:', error);
+        alert(`승인 요청 중 오류가 발생했습니다: ${error.message}`);
+      }
+
+      setShowApprovalModal(false);
+      setApprovalSchedule(null);
     };
 
-    // 그룹 스케줄 처리
-    let scheduleIds = [approvalSchedule.id];
-    
-    if (approvalSchedule.schedule_group_id) {
-      const { data: groupSchedules, error: groupError } = await supabase
-        .from('schedules')
-        .select('id')
-        .eq('schedule_group_id', approvalSchedule.schedule_group_id)
-        .eq('is_active', true);
-      
-      if (!groupError && groupSchedules) {
-        scheduleIds = groupSchedules.map(s => s.id);
+
+
+
+    // 수정된 스케줄 수정 처리 함수 - 그룹 처리 추가
+    const handleEditSchedule = async (schedule: any) => {
+      // modification_approved 상태에서는 바로 수정 모달 열기
+      if (schedule.approval_status === 'modification_approved') {
+        setEditingSchedule(schedule);
+        setShowEditModal(true);
+        return;
       }
-    }
 
-    const { error } = await supabase
-      .from('schedules')
-      .update({ 
-        approval_status: statusMap[approvalRequestType],
-        updated_at: new Date().toISOString(),
-        modification_reason: `${approvalRequestType === 'edit' ? '수정' : '취소'} 요청: ${reason} [요청자: ${managerInfo?.name || '매니저'}]`
-      })
-      .in('id', scheduleIds);
+      // 다른 상태(approved, confirmed)에서는 승인 요청 필요
+      if (schedule.approval_status === 'pending' || schedule.approval_status === 'modification_requested') {
+        alert('이미 승인 요청 중인 스케줄입니다.');
+        return;
+      }
 
-    if (error) throw error;
+      // 그룹 스케줄인 경우 실제 스케줄 ID 찾기
+      const targetSchedule = schedule.is_grouped ? schedule.grouped_schedules[0] : schedule;
 
-    // ✅ 메시지 생성 및 발송
-    const message = await generateNotificationMessage(
-      approvalRequestType === 'edit' ? 'modification_request' : 'cancellation_request',
-      approvalSchedule.id,
-      reason
-    );
+      setApprovalSchedule(targetSchedule);
+      setApprovalRequestType('edit');
+      setShowApprovalModal(true);
+    };
 
-    if (message) {
+    // 수정된 스케줄 취소 처리 함수 - 그룹 처리 추가
+    const handleCancelSchedule = async (schedule: any) => {
+      if (schedule.approval_status === 'cancellation_requested') {
+        alert('이미 취소 승인 요청 중인 스케줄입니다.');
+        return;
+      }
+
+      // 그룹 스케줄인 경우 실제 스케줄 ID 찾기
+      const targetSchedule = schedule.is_grouped ? schedule.grouped_schedules[0] : schedule;
+
+      setApprovalSchedule(targetSchedule);
+      setApprovalRequestType('cancel');
+      setShowApprovalModal(true);
+    };
+
+    // 사용 가능한 스튜디오 찾기 함수
+    const findAvailableStudio = async (shootingTypeName: string, date: string, startTime: string, endTime: string) => {
       try {
-        console.log('📨 메시지 발송 시작');
-        sendMessage(message, 'channel', []);  // ✅ messageText → message
-        console.log('✅ 승인요청 메시지 발송 성공');
-      } catch (messageError) {
-        console.error('❌ 승인요청 메시지 발송 실패:', messageError);
-      }
-    }
-
-    alert(`${approvalRequestType === 'edit' ? '수정' : '취소'} 요청이 완료되었습니다.`);
-    
-    // 화면 새로고침
-    fetchAllSchedules(false);
-    
-  } catch (error) {
-    console.error('승인 요청 실패:', error);
-    alert(`승인 요청 중 오류가 발생했습니다: ${error.message}`);
-  }
-
-  setShowApprovalModal(false);
-  setApprovalSchedule(null);
-};
-
-
-
-
-  // 수정된 스케줄 수정 처리 함수 - 그룹 처리 추가
-  const handleEditSchedule = async (schedule: any) => {
-    // modification_approved 상태에서는 바로 수정 모달 열기
-    if (schedule.approval_status === 'modification_approved') {
-      setEditingSchedule(schedule);
-      setShowEditModal(true);
-      return;
-    }
-
-    // 다른 상태(approved, confirmed)에서는 승인 요청 필요
-    if (schedule.approval_status === 'pending' || schedule.approval_status === 'modification_requested') {
-      alert('이미 승인 요청 중인 스케줄입니다.');
-      return;
-    }
-
-    // 그룹 스케줄인 경우 실제 스케줄 ID 찾기
-    const targetSchedule = schedule.is_grouped ? schedule.grouped_schedules[0] : schedule;
-    
-    setApprovalSchedule(targetSchedule);
-    setApprovalRequestType('edit');
-    setShowApprovalModal(true);
-  };
-
-  // 수정된 스케줄 취소 처리 함수 - 그룹 처리 추가
-  const handleCancelSchedule = async (schedule: any) => {
-    if (schedule.approval_status === 'cancellation_requested') {
-      alert('이미 취소 승인 요청 중인 스케줄입니다.');
-      return;
-    }
-
-    // 그룹 스케줄인 경우 실제 스케줄 ID 찾기
-    const targetSchedule = schedule.is_grouped ? schedule.grouped_schedules[0] : schedule;
-    
-    setApprovalSchedule(targetSchedule);
-    setApprovalRequestType('cancel');
-    setShowApprovalModal(true);
-  };
-
-  // 사용 가능한 스튜디오 찾기 함수
-  const findAvailableStudio = async (shootingTypeName: string, date: string, startTime: string, endTime: string) => {
-    try {
-      const { data: compatibleData, error: compatibleError } = await supabase
-        .from('sub_location_shooting_types')
-        .select(`
+        const { data: compatibleData, error: compatibleError } = await supabase
+          .from('sub_location_shooting_types')
+          .select(`
           sub_location_id,
           is_primary,
           shooting_types!inner(name)
         `)
-        .eq('shooting_types.name', shootingTypeName)
-        .eq('shooting_types.is_active', true);
+          .eq('shooting_types.name', shootingTypeName)
+          .eq('shooting_types.is_active', true);
 
-      if (compatibleError) throw compatibleError;
+        if (compatibleError) throw compatibleError;
 
-      const compatibleStudioIds = compatibleData?.map(item => item.sub_location_id) || [];
-      
-      const { data: bookedData, error: bookedError } = await supabase
-        .from('schedules')
-        .select('sub_location_id')
-        .eq('shoot_date', date)
-        .eq('is_active', true)
-        .or(`and(start_time.lte.${startTime},end_time.gt.${startTime}),and(start_time.lt.${endTime},end_time.gte.${endTime}),and(start_time.gte.${startTime},end_time.lte.${endTime})`);
+        const compatibleStudioIds = compatibleData?.map(item => item.sub_location_id) || [];
 
-      if (bookedError) throw bookedError;
+        const { data: bookedData, error: bookedError } = await supabase
+          .from('schedules')
+          .select('sub_location_id')
+          .eq('shoot_date', date)
+          .eq('is_active', true)
+          .or(`and(start_time.lte.${startTime},end_time.gt.${startTime}),and(start_time.lt.${endTime},end_time.gte.${endTime}),and(start_time.gte.${startTime},end_time.lte.${endTime})`);
 
-      const bookedStudioIds = bookedData?.map(item => item.sub_location_id) || [];
-      const availableStudioIds = compatibleStudioIds.filter(id => !bookedStudioIds.includes(id));
-      
-      if (availableStudioIds.length > 0) {
-        const primaryStudio = compatibleData?.find(item => 
-          item.is_primary && availableStudioIds.includes(item.sub_location_id)
-        );
-        
-        return primaryStudio ? primaryStudio.sub_location_id : availableStudioIds[0];
+        if (bookedError) throw bookedError;
+
+        const bookedStudioIds = bookedData?.map(item => item.sub_location_id) || [];
+        const availableStudioIds = compatibleStudioIds.filter(id => !bookedStudioIds.includes(id));
+
+        if (availableStudioIds.length > 0) {
+          const primaryStudio = compatibleData?.find(item =>
+            item.is_primary && availableStudioIds.includes(item.sub_location_id)
+          );
+
+          return primaryStudio ? primaryStudio.sub_location_id : availableStudioIds[0];
+        }
+
+        return compatibleStudioIds.length > 0 ? compatibleStudioIds : null;
+
+      } catch (error) {
+        console.error('사용 가능한 스튜디오 조회 오류:', error);
+        return null;
       }
-      
-      return compatibleStudioIds.length > 0 ? compatibleStudioIds : null;
-      
-    } catch (error) {
-      console.error('사용 가능한 스튜디오 조회 오류:', error);
-      return null;
-    }
-  };
-
-  // 실제 수정 저장 함수 - 양방향 변환 처리
-const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
-  try {
-    const studioId = editingSchedule?.sub_location_id;
-
-    // ✅ updatedData 대신 editedSchedule 또는 실제 데이터 사용
-    const finalData = {
-      shoot_date: editedSchedule.shoot_date,        // updatedData → editedSchedule
-      start_time: editedSchedule.start_time,         // updatedData → editedSchedule
-      end_time: editedSchedule.end_time,             // updatedData → editedSchedule
-      professor_name: editedSchedule.professor_name, // updatedData → editedSchedule
-      course_name: editedSchedule.course_name || null,
-      course_code: editedSchedule.course_code || null,
-      shooting_type: editedSchedule.shooting_type,
-      notes: editedSchedule.notes || null,
-      sub_location_id: studioId,
-      break_time_enabled: editedSchedule.break_time_enabled || false,
-      break_start_time: editedSchedule.break_time_enabled && editedSchedule.break_start_time 
-        ? editedSchedule.break_start_time : null,
-      break_end_time: editedSchedule.break_time_enabled && editedSchedule.break_end_time 
-        ? editedSchedule.break_end_time : null,
-      break_duration_minutes: editedSchedule.break_time_enabled 
-        ? (editedSchedule.break_duration_minutes || 0) : 0,
-      
-      // 수정 후 다시 승인 대기 상태로!
-      approval_status: 'pending',
-      updated_at: new Date().toISOString(),
-      modification_reason: `매니저 수정: ${new Date().toLocaleString('ko-KR')} [수정자: ${managerInfo?.name || '매니저'}]`
     };
 
-    // ... 기존 로직 (양방향 변환 처리)
-    if (editingSchedule?.is_grouped && editingSchedule?.grouped_schedules) {
-      const scheduleIds = editingSchedule.grouped_schedules.map(s => s.id);
-      const firstScheduleId = scheduleIds[0];
-      
-      if (!editedSchedule.break_time_enabled) { // updatedData → editedSchedule
-        // 분할 → 단일 변환
-        const { error: updateError } = await supabase
-          .from('schedules')
-          .update({
-            ...finalData,
-            sequence_order: 1,
-            schedule_group_id: null,
-            is_split_schedule: false
-          })
-          .eq('id', firstScheduleId);
-          
-        if (updateError) throw updateError;
-
-        const otherScheduleIds = scheduleIds.slice(1);
-        if (otherScheduleIds.length > 0) {
-          const { error: hideError } = await supabase
-            .from('schedules')
-            .update({
-              is_active: false,
-              updated_at: new Date().toISOString(),
-              modification_reason: '휴식시간 삭제로 인한 스케줄 통합'
-            })
-            .in('id', otherScheduleIds);
-            
-          if (hideError) throw hideError;
-        }
-      } else {
-        // 기존 분할 스케줄 유지 - 휴식시간 수정
-        const { error } = await supabase
-          .from('schedules')
-          .update(finalData)
-          .in('id', scheduleIds);
-          
-        if (error) throw error;
-      }
-    } else {
-      // 기존 단일 스케줄
-      if (editedSchedule.break_time_enabled) { // updatedData → editedSchedule
-        // 단일 → 분할 변환
-        const groupId = `${editedSchedule.professor_name}_${editedSchedule.shoot_date}_${Date.now()}`;
-        
-        // 1. 기존 스케줄을 1차 스케줄로 업데이트
-        const schedule1Data = {
-          ...finalData,
-          start_time: editedSchedule.start_time,           // updatedData → editedSchedule
-          end_time: editedSchedule.break_start_time,       // updatedData → editedSchedule
-          schedule_group_id: groupId,
-          sequence_order: 1,
-          is_split_schedule: true
-        };
-        
-        const { error: update1Error } = await supabase
-          .from('schedules')
-          .update(schedule1Data)
-          .eq('id', editingSchedule.id);
-          
-        if (update1Error) throw update1Error;
-
-        // 2. 2차 스케줄 새로 생성
-        const schedule2Data = {
-          ...finalData,
-          start_time: editedSchedule.break_end_time,       // updatedData → editedSchedule
-          end_time: editedSchedule.end_time,               // updatedData → editedSchedule
-          schedule_group_id: groupId,
-          sequence_order: 2,
-          is_split_schedule: true,
-          schedule_type: 'studio',
-          team_id: 1,
-          created_at: new Date().toISOString(),
-          is_active: true
-        };
-        
-        const { error: insert2Error } = await supabase
-          .from('schedules')
-          .insert([schedule2Data]);
-          
-        if (insert2Error) throw insert2Error;
-        
-      } else {
-        // 단일 스케줄 유지 - 일반 수정
-        const { error } = await supabase
-          .from('schedules')
-          .update(finalData)
-          .eq('id', editingSchedule.id);
-          
-        if (error) throw error;
-      }
-    }
-
-    // 🔧 재승인 메시지 발송
-    const message = generateAdminMessage(
-      'reapproval',                    // 재승인 타입
-      editedSchedule,                  // 수정된 스케줄 데이터 (updatedData → editedSchedule)
-      managerInfo?.name || '매니저',   // 매니저 이름
-      reason || '스케줄 수정으로 인한 재승인 필요'  // 사유
-    );
-
-    console.log('🔧 재승인 메시지:', message);
-
-    if (message) {
+    // 실제 수정 저장 함수 - 양방향 변환 처리
+    const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
       try {
-    // 메시지 발송
-    sendMessage(message, 'channel', []);
+        const studioId = editingSchedule?.sub_location_id;
 
-        console.log('✅ 재승인 메시지 발송 성공');
-      } catch (messageError) {
-        console.log('❌ 재승인 메시지 발송 실패:', messageError);
+        // ✅ updatedData 대신 editedSchedule 또는 실제 데이터 사용
+        const finalData = {
+          shoot_date: editedSchedule.shoot_date,        // updatedData → editedSchedule
+          start_time: editedSchedule.start_time,         // updatedData → editedSchedule
+          end_time: editedSchedule.end_time,             // updatedData → editedSchedule
+          professor_name: editedSchedule.professor_name, // updatedData → editedSchedule
+          course_name: editedSchedule.course_name || null,
+          course_code: editedSchedule.course_code || null,
+          shooting_type: editedSchedule.shooting_type,
+          notes: editedSchedule.notes || null,
+          sub_location_id: studioId,
+          break_time_enabled: editedSchedule.break_time_enabled || false,
+          break_start_time: editedSchedule.break_time_enabled && editedSchedule.break_start_time
+            ? editedSchedule.break_start_time : null,
+          break_end_time: editedSchedule.break_time_enabled && editedSchedule.break_end_time
+            ? editedSchedule.break_end_time : null,
+          break_duration_minutes: editedSchedule.break_time_enabled
+            ? (editedSchedule.break_duration_minutes || 0) : 0,
+
+          // 수정 후 다시 승인 대기 상태로!
+          approval_status: 'pending',
+          updated_at: new Date().toISOString(),
+          modification_reason: `매니저 수정: ${new Date().toLocaleString('ko-KR')} [수정자: ${managerInfo?.name || '매니저'}]`
+        };
+
+        // ... 기존 로직 (양방향 변환 처리)
+        if (editingSchedule?.is_grouped && editingSchedule?.grouped_schedules) {
+          const scheduleIds = editingSchedule.grouped_schedules.map(s => s.id);
+          const firstScheduleId = scheduleIds[0];
+
+          if (!editedSchedule.break_time_enabled) { // updatedData → editedSchedule
+            // 분할 → 단일 변환
+            const { error: updateError } = await supabase
+              .from('schedules')
+              .update({
+                ...finalData,
+                sequence_order: 1,
+                schedule_group_id: null,
+                is_split_schedule: false
+              })
+              .eq('id', firstScheduleId);
+
+            if (updateError) throw updateError;
+
+            const otherScheduleIds = scheduleIds.slice(1);
+            if (otherScheduleIds.length > 0) {
+              const { error: hideError } = await supabase
+                .from('schedules')
+                .update({
+                  is_active: false,
+                  updated_at: new Date().toISOString(),
+                  modification_reason: '휴식시간 삭제로 인한 스케줄 통합'
+                })
+                .in('id', otherScheduleIds);
+
+              if (hideError) throw hideError;
+            }
+          } else {
+            // 기존 분할 스케줄 유지 - 휴식시간 수정
+            const { error } = await supabase
+              .from('schedules')
+              .update(finalData)
+              .in('id', scheduleIds);
+
+            if (error) throw error;
+          }
+        } else {
+          // 기존 단일 스케줄
+          if (editedSchedule.break_time_enabled) { // updatedData → editedSchedule
+            // 단일 → 분할 변환
+            const groupId = `${editedSchedule.professor_name}_${editedSchedule.shoot_date}_${Date.now()}`;
+
+            // 1. 기존 스케줄을 1차 스케줄로 업데이트
+            const schedule1Data = {
+              ...finalData,
+              start_time: editedSchedule.start_time,           // updatedData → editedSchedule
+              end_time: editedSchedule.break_start_time,       // updatedData → editedSchedule
+              schedule_group_id: groupId,
+              sequence_order: 1,
+              is_split_schedule: true
+            };
+
+            const { error: update1Error } = await supabase
+              .from('schedules')
+              .update(schedule1Data)
+              .eq('id', editingSchedule.id);
+
+            if (update1Error) throw update1Error;
+
+            // 2. 2차 스케줄 새로 생성
+            const schedule2Data = {
+              ...finalData,
+              start_time: editedSchedule.break_end_time,       // updatedData → editedSchedule
+              end_time: editedSchedule.end_time,               // updatedData → editedSchedule
+              schedule_group_id: groupId,
+              sequence_order: 2,
+              is_split_schedule: true,
+              schedule_type: 'studio',
+              team_id: 1,
+              created_at: new Date().toISOString(),
+              is_active: true
+            };
+
+            const { error: insert2Error } = await supabase
+              .from('schedules')
+              .insert([schedule2Data]);
+
+            if (insert2Error) throw insert2Error;
+
+          } else {
+            // 단일 스케줄 유지 - 일반 수정
+            const { error } = await supabase
+              .from('schedules')
+              .update(finalData)
+              .eq('id', editingSchedule.id);
+
+            if (error) throw error;
+          }
+        }
+
+        // 🔧 재승인 메시지 발송
+        const message = generateAdminMessage(
+          'reapproval',                    // 재승인 타입
+          editedSchedule,                  // 수정된 스케줄 데이터 (updatedData → editedSchedule)
+          managerInfo?.name || '매니저',   // 매니저 이름
+          reason || '스케줄 수정으로 인한 재승인 필요'  // 사유
+        );
+
+        console.log('🔧 재승인 메시지:', message);
+
+        if (message) {
+          try {
+            // 메시지 발송
+            sendMessage(message, 'channel', []);
+
+            console.log('✅ 재승인 메시지 발송 성공');
+          } catch (messageError) {
+            console.log('❌ 재승인 메시지 발송 실패:', messageError);
+          }
+        }
+
+        alert('스케줄이 수정되었습니다.\n관리자 재승인 후 최종 확정됩니다.');
+        setShowEditModal(false);
+        setEditingSchedule(null);
+        fetchAllSchedules(false);
+
+      } catch (error) {
+        console.error('스케줄 수정 오류:', error);
+        alert('스케줄 수정 중 오류가 발생했습니다: ' + error.message);
       }
-    }
-
-    alert('스케줄이 수정되었습니다.\n관리자 재승인 후 최종 확정됩니다.');
-    setShowEditModal(false);
-    setEditingSchedule(null);
-    fetchAllSchedules(false);
-    
-  } catch (error) {
-    console.error('스케줄 수정 오류:', error);
-    alert('스케줄 수정 중 오류가 발생했습니다: ' + error.message);
-  }
-};
+    };
 
 
 
- // 충돌 검사 함수 (매니저용) - 완전한 버전
-const checkScheduleConflictAndRecommend = async (
-  formData: StudioScheduleFormData, 
-  excludeScheduleId?: number,
-  excludeGroupId?: string
-) => {
-  try {
-    // 1단계: 촬영형식과 호환되는 스튜디오 찾기
-    const { data: compatibleData, error: compatibleError } = await supabase
-      .from('sub_location_shooting_types')
-      .select(`
+    // 충돌 검사 함수 (매니저용) - 완전한 버전
+    const checkScheduleConflictAndRecommend = async (
+      formData: StudioScheduleFormData,
+      excludeScheduleId?: number,
+      excludeGroupId?: string
+    ) => {
+      try {
+        // 1단계: 촬영형식과 호환되는 스튜디오 찾기
+        const { data: compatibleData, error: compatibleError } = await supabase
+          .from('sub_location_shooting_types')
+          .select(`
         sub_location_id,
         is_primary,
         sub_locations(id, name),
         shooting_types!inner(name)
       `)
-      .eq('shooting_types.name', formData.shooting_type)
-      .eq('shooting_types.is_active', true);
+          .eq('shooting_types.name', formData.shooting_type)
+          .eq('shooting_types.is_active', true);
 
-    if (compatibleError) throw compatibleError;
+        if (compatibleError) throw compatibleError;
 
-    const compatibleStudioIds = (compatibleData || []).map(item => item.sub_location_id);
+        const compatibleStudioIds = (compatibleData || []).map(item => item.sub_location_id);
 
-    if (compatibleStudioIds.length === 0) {
-      return {
-        hasConflict: true,
-        conflictMessage: `"${formData.shooting_type}" 촬영형식을 지원하는 스튜디오가 없습니다.\n\n다른 촬영형식을 선택해주세요.`,
-        availableStudios: [],
-        recommendedStudioId: null
-      };
-    }
+        if (compatibleStudioIds.length === 0) {
+          return {
+            hasConflict: true,
+            conflictMessage: `"${formData.shooting_type}" 촬영형식을 지원하는 스튜디오가 없습니다.\n\n다른 촬영형식을 선택해주세요.`,
+            availableStudios: [],
+            recommendedStudioId: null
+          };
+        }
 
-    // 2단계: 호환 스튜디오 중에서만 시간 충돌 검사
-    const { data: allSchedules, error } = await supabase
-      .from('schedules')
-      .select(`
+        // 2단계: 호환 스튜디오 중에서만 시간 충돌 검사
+        const { data: allSchedules, error } = await supabase
+          .from('schedules')
+          .select(`
         id, 
         start_time, 
         end_time, 
@@ -2650,1684 +2650,1685 @@ const checkScheduleConflictAndRecommend = async (
         professor_name,
         course_name
       `)
-      .eq('shoot_date', formData.shoot_date)
-      .eq('is_active', true)
-      .in('sub_location_id', compatibleStudioIds);
+          .eq('shoot_date', formData.shoot_date)
+          .eq('is_active', true)
+          .in('sub_location_id', compatibleStudioIds);
 
-    if (error) throw error;
+        if (error) throw error;
 
-    // 제외할 스케줄 필터링
-    const activeSchedules = (allSchedules || []).filter(schedule => {
-      if (excludeScheduleId && schedule.id === excludeScheduleId) return false;
-      if (excludeGroupId && schedule.schedule_group_id === excludeGroupId) return false;
-      return true;
-    });
+        // 제외할 스케줄 필터링
+        const activeSchedules = (allSchedules || []).filter(schedule => {
+          if (excludeScheduleId && schedule.id === excludeScheduleId) return false;
+          if (excludeGroupId && schedule.schedule_group_id === excludeGroupId) return false;
+          return true;
+        });
 
-    // 3단계: 시간 충돌 검사
-    const startMinutes = timeToMinutes(formData.start_time);
-    const endMinutes = timeToMinutes(formData.end_time);
+        // 3단계: 시간 충돌 검사
+        const startMinutes = timeToMinutes(formData.start_time);
+        const endMinutes = timeToMinutes(formData.end_time);
 
-    const conflictsByStudio = new Map();
+        const conflictsByStudio = new Map();
 
-    activeSchedules.forEach(schedule => {
-      const scheduleStart = timeToMinutes(schedule.start_time);
-      const scheduleEnd = timeToMinutes(schedule.end_time);
-      
-      // 시간 겹침 여부 체크
-      if ((startMinutes < scheduleEnd) && (scheduleStart < endMinutes)) {
-        const studioId = schedule.sub_location_id;
-        if (!conflictsByStudio.has(studioId)) {
-          conflictsByStudio.set(studioId, []);
+        activeSchedules.forEach(schedule => {
+          const scheduleStart = timeToMinutes(schedule.start_time);
+          const scheduleEnd = timeToMinutes(schedule.end_time);
+
+          // 시간 겹침 여부 체크
+          if ((startMinutes < scheduleEnd) && (scheduleStart < endMinutes)) {
+            const studioId = schedule.sub_location_id;
+            if (!conflictsByStudio.has(studioId)) {
+              conflictsByStudio.set(studioId, []);
+            }
+            conflictsByStudio.get(studioId).push(schedule);
+          }
+        });
+
+        // 4단계: 사용 가능한 스튜디오 찾기
+        const availableStudioIds = compatibleStudioIds.filter(
+          studioId => !conflictsByStudio.has(studioId)
+        );
+
+        if (availableStudioIds.length > 0) {
+          // Primary 스튜디오 우선 추천
+          const primaryStudio = compatibleData?.find(item =>
+            item.is_primary && availableStudioIds.includes(item.sub_location_id)
+          );
+
+          return {
+            hasConflict: false,
+            conflictMessage: '',
+            availableStudios: availableStudioIds,
+            recommendedStudioId: primaryStudio ? primaryStudio.sub_location_id : availableStudioIds[0]
+          };
         }
-        conflictsByStudio.get(studioId).push(schedule);
+
+        // 5단계: 모든 스튜디오가 사용 중인 경우 시간 추천
+        const durationMinutes = endMinutes - startMinutes;
+        const suggestions = findAvailableTimeSlots(activeSchedules, compatibleStudioIds, durationMinutes);
+
+        let conflictMessage = `선택한 시간대(${formData.start_time}~${formData.end_time})에 모든 호환 스튜디오가 사용 중입니다.\n\n`;
+
+        if (suggestions.length > 0) {
+          conflictMessage += `다음 시간대를 추천합니다:\n`;
+          suggestions.forEach((slot, idx) => {
+            conflictMessage += `${idx + 1}. ${slot.start} ~ ${slot.end}\n`;
+          });
+        } else {
+          conflictMessage += `해당 날짜에는 다른 시간대도 사용할 수 없습니다.\n다른 날짜를 선택해주세요.`;
+        }
+
+        return {
+          hasConflict: true,
+          conflictMessage,
+          availableStudios: [],
+          recommendedStudioId: null
+        };
+
+      } catch (error) {
+        console.error('충돌 검사 오류:', error);
+        return {
+          hasConflict: true,
+          conflictMessage: '스케줄 검사 중 오류가 발생했습니다.',
+          availableStudios: [],
+          recommendedStudioId: null
+        };
       }
-    });
+    };
+    // 스케줄 생성 함수 (분할 처리 포함)
+    const createScheduleGroup = async (data: StudioScheduleFormData) => {
+      try {
+        const studioId = await findAvailableStudio(
+          data.shooting_type,
+          data.shoot_date,
+          data.start_time,
+          data.end_time
+        );
 
-    // 4단계: 사용 가능한 스튜디오 찾기
-    const availableStudioIds = compatibleStudioIds.filter(
-      studioId => !conflictsByStudio.has(studioId)
-    );
+        if (!studioId) {
+          throw new Error('사용 가능한 스튜디오를 찾을 수 없습니다.');
+        }
 
-    if (availableStudioIds.length > 0) {
-      // Primary 스튜디오 우선 추천
-      const primaryStudio = compatibleData?.find(item => 
-        item.is_primary && availableStudioIds.includes(item.sub_location_id)
+        if (data.break_time_enabled && data.break_start_time && data.break_end_time) {
+          // 분할 스케줄 생성
+          const groupId = `${data.professor_name}_${data.shoot_date}_${Date.now()}`;
+
+          const schedule1 = {
+            schedule_type: 'studio',
+            shoot_date: data.shoot_date,
+            start_time: data.start_time,
+            end_time: data.break_start_time,
+            professor_name: data.professor_name,
+            course_name: data.course_name || null,
+            course_code: data.course_code || null,
+            shooting_type: data.shooting_type,
+            notes: `${data.notes || ''}`.trim() || null,
+            sub_location_id: studioId,
+            team_id: 1,
+            approval_status: 'pending',
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            schedule_group_id: groupId,
+            sequence_order: 1,
+            is_split_schedule: true,
+            break_time_enabled: true,
+            break_start_time: data.break_start_time,
+            break_end_time: data.break_end_time,
+            break_duration_minutes: data.break_duration_minutes || 0
+          };
+
+          const schedule2 = {
+            ...schedule1,
+            start_time: data.break_end_time,
+            end_time: data.end_time,
+            sequence_order: 2
+          };
+
+          const { data: createdSchedules, error } = await supabase
+            .from('schedules')
+            .insert([schedule1, schedule2])
+            .select();
+
+          if (error) throw error;
+
+          return {
+            success: true,
+            data: createdSchedules,
+            message: `분할 스케줄이 등록되었습니다.\n1차: ${data.start_time} ~ ${data.break_start_time}\n휴식: ${data.break_start_time} ~ ${data.break_end_time}\n2차: ${data.break_end_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
+          };
+        } else {
+          // 단일 스케줄 생성
+          const schedule = {
+            schedule_type: 'studio',
+            shoot_date: data.shoot_date,
+            start_time: data.start_time,
+            end_time: data.end_time,
+            professor_name: data.professor_name,
+            course_name: data.course_name || null,
+            course_code: data.course_code || null,
+            shooting_type: data.shooting_type,
+            notes: data.notes || null,
+            sub_location_id: studioId,
+            team_id: 1,
+            approval_status: 'pending',
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            sequence_order: 1,
+            is_split_schedule: false,
+            break_time_enabled: false,
+            break_start_time: null,
+            break_end_time: null,
+            break_duration_minutes: 0
+          };
+
+          const { data: createdSchedule, error } = await supabase
+            .from('schedules')
+            .insert([schedule])
+            .select();
+
+          if (error) throw error;
+
+          return {
+            success: true,
+            data: createdSchedule,
+            message: `스케줄이 등록되었습니다.\n${data.start_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
+          };
+        }
+      } catch (error) {
+        console.error('스케줄 생성 오류:', error);
+        throw new Error(`스케줄 생성 실패: ${error.message}`);
+      }
+    };
+
+    // 폼 검증
+    const validateForm = (): boolean => {
+      const newErrors: Record<string, string> = {};
+
+      if (!formData.shoot_date) newErrors.shoot_date = '촬영 날짜를 선택해주세요';
+      if (!formData.start_time) newErrors.start_time = '시작 시간을 선택해주세요';
+      if (!formData.end_time) newErrors.end_time = '종료 시간을 선택해주세요';
+      if (!formData.professor_name) newErrors.professor_name = '교수명을 입력해주세요';
+      if (!formData.shooting_type) newErrors.shooting_type = '촬영 형식을 선택해주세요';
+
+      if (formData.start_time && formData.end_time) {
+        if (formData.start_time >= formData.end_time) {
+          newErrors.end_time = '종료 시간은 시작 시간보다 늦어야 합니다';
+        }
+      }
+
+      if (formData.break_time_enabled) {
+        if (!formData.break_start_time) newErrors.break_start_time = '휴식 시작 시간을 선택해주세요';
+        if (!formData.break_end_time) newErrors.break_end_time = '휴식 종료 시간을 선택해주세요';
+
+        if (formData.start_time && formData.break_start_time && formData.start_time >= formData.break_start_time) {
+          newErrors.break_start_time = '휴식 시작 시간은 촬영 시작 시간보다 늦어야 합니다';
+        }
+
+        if (formData.break_end_time && formData.end_time && formData.break_end_time >= formData.end_time) {
+          newErrors.break_end_time = '휴식 종료 시간은 촬영 종료 시간보다 빨라야 합니다';
+        }
+      }
+
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
+    };
+
+    // 폼 시간 변경 핸들러
+    const handleFormTimeChange = (field: string, value: string) => {
+      const newFormData = { ...formData, [field]: value };
+
+      // 시작/종료 시간 변경 시 휴식시간 자동 조정
+      if (field === 'start_time' || field === 'end_time') {
+        if (newFormData.break_time_enabled && newFormData.start_time && newFormData.end_time) {
+          const recommendation = checkBreakTimeRecommendation(newFormData.start_time, newFormData.end_time);
+
+          if (recommendation.shouldRecommend && recommendation.suggestedBreakTime) {
+            newFormData.break_start_time = recommendation.suggestedBreakTime.startTime;
+            newFormData.break_end_time = recommendation.suggestedBreakTime.endTime;
+            newFormData.break_duration_minutes = recommendation.suggestedBreakTime.durationMinutes;
+          }
+        }
+      }
+
+      setFormData(newFormData);
+    };
+
+    // 휴식시간 변경 핸들러
+    const handleBreakTimeChange = (field: 'break_start_time' | 'break_end_time', value: string) => {
+      const newFormData = { ...formData, [field]: value };
+
+      if (newFormData.break_start_time && newFormData.break_end_time) {
+        const duration = calculateBreakDuration(newFormData.break_start_time, newFormData.break_end_time);
+        newFormData.break_duration_minutes = duration;
+      }
+
+      setFormData(newFormData);
+    };
+
+    // 휴식시간 설정 렌더링
+    const renderBreakTimeSettings = () => {
+      if (!shouldShowBreakTimeSettings(formData.start_time, formData.end_time)) {
+        return null;
+      }
+
+      const recommendation = checkBreakTimeRecommendation(formData.start_time, formData.end_time);
+
+      return (
+        <div style={{
+          padding: 'clamp(12px, 3vw, 16px)',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '8px',
+          border: '1px solid #dee2e6',
+          marginBottom: 'clamp(12px, 3vw, 16px)'
+        }}>
+          <h4 style={{
+            margin: '0 0 12px 0',
+            color: '#374151',
+            fontSize: 'clamp(14px, 3.5vw, 16px)'
+          }}>
+            휴식시간 설정 (4시간 이상 촬영)
+          </h4>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: 'pointer',
+              fontSize: 'clamp(14px, 3.5vw, 16px)',
+              fontWeight: '500'
+            }}>
+              <input
+                type="checkbox"
+                checked={formData.break_time_enabled}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  if (enabled && recommendation.shouldRecommend && recommendation.suggestedBreakTime) {
+                    setFormData(prev => ({
+                      ...prev,
+                      break_time_enabled: true,
+                      break_start_time: recommendation.suggestedBreakTime!.startTime,
+                      break_end_time: recommendation.suggestedBreakTime!.endTime,
+                      break_duration_minutes: recommendation.suggestedBreakTime!.durationMinutes
+                    }));
+                  } else {
+                    setFormData(prev => ({
+                      ...prev,
+                      break_time_enabled: enabled,
+                      break_start_time: enabled ? prev.break_start_time : undefined,
+                      break_end_time: enabled ? prev.break_end_time : undefined,
+                      break_duration_minutes: enabled ? prev.break_duration_minutes : 0
+                    }));
+                  }
+                }}
+                style={{
+                  marginRight: '8px',
+                  transform: 'scale(1.2)'
+                }}
+              />
+              휴식시간 사용
+            </label>
+
+            {recommendation.shouldRecommend && (
+              <p style={{
+                color: '#059669',
+                fontSize: 'clamp(12px, 3vw, 13px)',
+                margin: '6px 0 0 0',
+                fontWeight: '500'
+              }}>
+                {recommendation.reason}
+              </p>
+            )}
+          </div>
+
+          {formData.break_time_enabled && (
+            <div style={{
+              padding: 'clamp(12px, 3vw, 16px)',
+              backgroundColor: '#f0f9ff',
+              borderRadius: '8px',
+              border: '1px solid #dbeafe'
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr auto',
+                gap: 'clamp(8px, 2vw, 12px)',
+                alignItems: 'end',
+                marginBottom: '16px'
+              }}>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '6px',
+                    fontSize: 'clamp(12px, 3vw, 14px)',
+                    fontWeight: '500',
+                    color: '#374151'
+                  }}>
+                    시작
+                  </label>
+                  <select
+                    value={formData.break_start_time || ''}
+                    onChange={(e) => handleBreakTimeChange('break_start_time', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: 'clamp(8px, 2vw, 10px)',
+                      border: `1px solid ${errors.break_start_time ? '#f44336' : '#d1d5db'}`,
+                      borderRadius: '6px',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      textAlign: 'center'
+                    }}>
+                    <option value="">시작</option>
+                    {generateBreakTimeOptionsInRange(formData.start_time, formData.end_time).map(time => (
+                      <option key={time} value={time}>{time}</option>
+                    ))}
+                  </select>
+                  {errors.break_start_time && (
+                    <span style={{
+                      color: '#f44336',
+                      fontSize: 'clamp(10px, 2.5vw, 11px)',
+                      marginTop: 2,
+                      display: 'block'
+                    }}>
+                      {errors.break_start_time}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '6px',
+                    fontSize: 'clamp(12px, 3vw, 14px)',
+                    fontWeight: '500',
+                    color: '#374151'
+                  }}>
+                    종료
+                  </label>
+                  <select
+                    value={formData.break_end_time || ''}
+                    onChange={(e) => handleBreakTimeChange('break_end_time', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: 'clamp(8px, 2vw, 10px)',
+                      border: `1px solid ${errors.break_end_time ? '#f44336' : '#d1d5db'}`,
+                      borderRadius: '6px',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      textAlign: 'center'
+                    }}>
+                    <option value="">종료</option>
+                    {generateBreakTimeOptionsInRange(formData.start_time, formData.end_time).map(time => (
+                      <option key={time} value={time}>{time}</option>
+                    ))}
+                  </select>
+                  {errors.break_end_time && (
+                    <span style={{
+                      color: '#f44336',
+                      fontSize: 'clamp(10px, 2.5vw, 11px)',
+                      marginTop: 2,
+                      display: 'block'
+                    }}>
+                      {errors.break_end_time}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{
+                  padding: 'clamp(8px, 2vw, 10px)',
+                  backgroundColor: 'white',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  fontSize: 'clamp(12px, 3vw, 14px)',
+                  fontWeight: '500',
+                  color: '#374151',
+                  textAlign: 'center',
+                  whiteSpace: 'nowrap',
+                  minHeight: 'clamp(32px, 8vw, 38px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {formData.break_duration_minutes}분
+                </div>
+              </div>
+
+              <div style={{
+                padding: 'clamp(8px, 2vw, 12px)',
+                backgroundColor: 'white',
+                borderRadius: '6px',
+                fontSize: 'clamp(11px, 2.5vw, 12px)',
+                border: '1px solid #e5e7eb'
+              }}>
+                <div style={{
+                  fontWeight: '500',
+                  marginBottom: '6px',
+                  color: '#374151'
+                }}>
+                  분할 스케줄 예상
+                </div>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '3px'
+                }}>
+                  <div>
+                    <span style={{ color: '#4caf50', fontWeight: '500' }}>1차:</span> {formData.start_time} ~ {formData.break_start_time}
+                  </div>
+                  <div>
+                    <span style={{ color: '#6c757d', fontWeight: '500' }}>휴식:</span> {formData.break_start_time} ~ {formData.break_end_time} ({formData.break_duration_minutes}분)
+                  </div>
+                  <div>
+                    <span style={{ color: '#2196f3', fontWeight: '500' }}>2차:</span> {formData.break_end_time} ~ {formData.end_time}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       );
+    };
 
-      return {
-        hasConflict: false,
-        conflictMessage: '',
-        availableStudios: availableStudioIds,
-        recommendedStudioId: primaryStudio ? primaryStudio.sub_location_id : availableStudioIds[0]
-      };
-    }
+    // 스케줄 등록 제출
+    const submitShootingRequest = async () => {
+      if (!validateForm()) {
+        alert('필수 항목을 모두 입력해주세요');
+        return;
+      }
 
-    // 5단계: 모든 스튜디오가 사용 중인 경우 시간 추천
-    const durationMinutes = endMinutes - startMinutes;
-    const suggestions = findAvailableTimeSlots(activeSchedules, compatibleStudioIds, durationMinutes);
+      try {
+        const conflictCheck = await checkScheduleConflictAndRecommend(formData);
 
-    let conflictMessage = `선택한 시간대(${formData.start_time}~${formData.end_time})에 모든 호환 스튜디오가 사용 중입니다.\n\n`;
+        if (conflictCheck.hasConflict) {
+          alert(conflictCheck.conflictMessage);
+          return;
+        }
 
-    if (suggestions.length > 0) {
-      conflictMessage += `다음 시간대를 추천합니다:\n`;
-      suggestions.forEach((slot, idx) => {
-        conflictMessage += `${idx + 1}. ${slot.start} ~ ${slot.end}\n`;
+        const confirmSubmit = confirm(
+          `${formData.professor_name} 교수님 촬영을 요청하시겠습니까?\n\n` +
+          `날짜: ${formData.shoot_date}\n` +
+          `시간: ${formData.start_time} ~ ${formData.end_time}\n` +
+          `촬영형식: ${formData.shooting_type}`
+        );
+
+        if (!confirmSubmit) return;
+
+        const result = await createScheduleGroup(formData);
+
+        // 관리자에게 승인 요청 메시지 발송
+        // 🔧 메시지 발송 - await 추가!
+        const message = await generateAdminMessage('approval', formData, managerInfo?.name || '매니저');
+
+        try {
+          // 메시지 발송
+          sendMessage(message, 'channel', []);
+
+        } catch (err) {
+          console.log('메시지 발송 실패:', err);
+        }
+
+        alert(result.message);
+        resetForm();
+        if (showScheduleList) {
+          fetchAllSchedules(false);
+        }
+
+      } catch (error) {
+        console.error('등록 오류:', error);
+        alert('등록 중 오류가 발생했습니다: ' + error.message);
+      }
+    };
+
+    // 폼 초기화
+    const resetForm = () => {
+      setFormData({
+        shoot_date: '',
+        start_time: '',
+        end_time: '',
+        professor_name: '',
+        course_name: '',
+        course_code: '',
+        shooting_type: '',
+        notes: '',
+        break_time_enabled: false,
+        break_start_time: undefined,
+        break_end_time: undefined,
+        break_duration_minutes: 0,
+        schedule_group_id: undefined,
+        is_split_schedule: false
       });
-    } else {
-      conflictMessage += `해당 날짜에는 다른 시간대도 사용할 수 없습니다.\n다른 날짜를 선택해주세요.`;
-    }
-
-    return {
-      hasConflict: true,
-      conflictMessage,
-      availableStudios: [],
-      recommendedStudioId: null
+      setErrors({});
+      setSelectedProfessorInfo(null);
     };
 
-  } catch (error) {
-    console.error('충돌 검사 오류:', error);
-    return {
-      hasConflict: true,
-      conflictMessage: '스케줄 검사 중 오류가 발생했습니다.',
-      availableStudios: [],
-      recommendedStudioId: null
+    // 개발 테스트 날짜 선택 핸들러
+    const handleDevDateSelect = (date: string) => {
+      setTestDate(date);
     };
-  }
-};
-// 스케줄 생성 함수 (분할 처리 포함)
-  const createScheduleGroup = async (data: StudioScheduleFormData) => {
-    try {
-      const studioId = await findAvailableStudio(
-        data.shooting_type,
-        data.shoot_date,
-        data.start_time,
-        data.end_time
+
+    // 스케줄 상태 정보
+    const getStatusInfo = (status: string, isActive: boolean = true) => {
+      if (isActive === false || status === "cancelled") {
+        return { text: "취소됨", bg: "#f5f5f5", color: "#6c757d" };
+      }
+
+      switch (status) {
+        case "modification_requested":
+          return { text: "수정 승인 대기중", bg: "#f3e5f5", color: "#7b1fa2" };
+        case "modification_approved":
+          return { text: "수정 승인됨", bg: "#e8f5e8", color: "#2e7d32" };
+        case "cancellation_requested":
+          return { text: "취소 승인 대기중", bg: "#fce4ec", color: "#ad1457" };
+        case "pending":
+          return { text: "승인 대기중", bg: "#fbbf24", color: "#92400e" };
+        case "approved":
+          return { text: "촬영확정", bg: "#e3f2fd", color: "#1976d2" };
+        case "confirmed":
+          return { text: "촬영확정", bg: "#e3f2fd", color: "#1976d2" };
+        default:
+          return { text: status, bg: "#f5f5f5", color: "#616161" };
+      }
+    };
+
+    // 과거 스케줄 여부 확인
+    const isPastSchedule = (date: string): boolean => {
+      const today = testDate ? new Date(testDate) : new Date();
+      const scheduleDate = new Date(date);
+      return scheduleDate < today;
+    };
+
+    // 취소된 스케줄 여부 확인
+    const isCancelledSchedule = (schedule: any): boolean => {
+      return schedule.is_active === false ||
+        schedule.approval_status === 'cancelled' ||
+        (schedule.deletion_reason && schedule.deletion_reason !== 'split_converted');
+    };
+
+    // 로그인하지 않은 경우 로그인 화면 표시
+    if (!managerInfo) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 'clamp(16px, 4vw, 20px)'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: 'clamp(24px, 6vw, 32px)',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            maxWidth: '400px',
+            width: '100%',
+            textAlign: 'center'
+          }}>
+            <h2 style={{
+              marginBottom: '24px',
+              fontSize: 'clamp(20px, 5vw, 24px)',
+              color: '#1f2937'
+            }}>
+              스튜디오 스케줄 관리
+            </h2>
+
+            <p style={{
+              marginBottom: '24px',
+              color: '#6b7280',
+              fontSize: 'clamp(14px, 3.5vw, 16px)'
+            }}>
+              매니저 권한이 필요합니다
+            </p>
+
+            <button
+              onClick={() => {
+                localStorage.setItem('userRole', 'academy_manager');
+                localStorage.setItem('userName', '테스트매니저');
+                localStorage.setItem('userEmail', 'manager@test.com');
+                window.location.reload();
+              }}
+              style={{
+                padding: 'clamp(10px, 3vw, 12px) clamp(20px, 5vw, 24px)',
+                background: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: 'clamp(14px, 3.5vw, 16px)',
+                fontWeight: '500'
+              }}
+            >
+              테스트용 매니저 로그인
+            </button>
+          </div>
+        </div>
       );
-
-      if (!studioId) {
-        throw new Error('사용 가능한 스튜디오를 찾을 수 없습니다.');
-      }
-
-      if (data.break_time_enabled && data.break_start_time && data.break_end_time) {
-        // 분할 스케줄 생성
-        const groupId = `${data.professor_name}_${data.shoot_date}_${Date.now()}`;
-
-        const schedule1 = {
-          schedule_type: 'studio',
-          shoot_date: data.shoot_date,
-          start_time: data.start_time,
-          end_time: data.break_start_time,
-          professor_name: data.professor_name,
-          course_name: data.course_name || null,
-          course_code: data.course_code || null,
-          shooting_type: data.shooting_type,
-          notes: `${data.notes || ''}`.trim() || null,
-          sub_location_id: studioId,
-          team_id: 1,
-          approval_status: 'pending',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          schedule_group_id: groupId,
-          sequence_order: 1,
-          is_split_schedule: true,
-          break_time_enabled: true,
-          break_start_time: data.break_start_time,
-          break_end_time: data.break_end_time,
-          break_duration_minutes: data.break_duration_minutes || 0
-        };
-
-        const schedule2 = {
-          ...schedule1,
-          start_time: data.break_end_time,
-          end_time: data.end_time,
-          sequence_order: 2
-        };
-
-        const { data: createdSchedules, error } = await supabase
-          .from('schedules')
-          .insert([schedule1, schedule2])
-          .select();
-
-        if (error) throw error;
-
-        return {
-          success: true,
-          data: createdSchedules,
-          message: `분할 스케줄이 등록되었습니다.\n1차: ${data.start_time} ~ ${data.break_start_time}\n휴식: ${data.break_start_time} ~ ${data.break_end_time}\n2차: ${data.break_end_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
-        };
-      } else {
-        // 단일 스케줄 생성
-        const schedule = {
-          schedule_type: 'studio',
-          shoot_date: data.shoot_date,
-          start_time: data.start_time,
-          end_time: data.end_time,
-          professor_name: data.professor_name,
-          course_name: data.course_name || null,
-          course_code: data.course_code || null,
-          shooting_type: data.shooting_type,
-          notes: data.notes || null,
-          sub_location_id: studioId,
-          team_id: 1,
-          approval_status: 'pending',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          sequence_order: 1,
-          is_split_schedule: false,
-          break_time_enabled: false,
-          break_start_time: null,
-          break_end_time: null,
-          break_duration_minutes: 0
-        };
-
-        const { data: createdSchedule, error } = await supabase
-          .from('schedules')
-          .insert([schedule])
-          .select();
-
-        if (error) throw error;
-
-        return {
-          success: true,
-          data: createdSchedule,
-          message: `스케줄이 등록되었습니다.\n${data.start_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
-        };
-      }
-    } catch (error) {
-      console.error('스케줄 생성 오류:', error);
-      throw new Error(`스케줄 생성 실패: ${error.message}`);
     }
-  };
-
-  // 폼 검증
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.shoot_date) newErrors.shoot_date = '촬영 날짜를 선택해주세요';
-    if (!formData.start_time) newErrors.start_time = '시작 시간을 선택해주세요';
-    if (!formData.end_time) newErrors.end_time = '종료 시간을 선택해주세요';
-    if (!formData.professor_name) newErrors.professor_name = '교수명을 입력해주세요';
-    if (!formData.shooting_type) newErrors.shooting_type = '촬영 형식을 선택해주세요';
-
-    if (formData.start_time && formData.end_time) {
-      if (formData.start_time >= formData.end_time) {
-        newErrors.end_time = '종료 시간은 시작 시간보다 늦어야 합니다';
-      }
-    }
-
-    if (formData.break_time_enabled) {
-      if (!formData.break_start_time) newErrors.break_start_time = '휴식 시작 시간을 선택해주세요';
-      if (!formData.break_end_time) newErrors.break_end_time = '휴식 종료 시간을 선택해주세요';
-
-      if (formData.start_time && formData.break_start_time && formData.start_time >= formData.break_start_time) {
-        newErrors.break_start_time = '휴식 시작 시간은 촬영 시작 시간보다 늦어야 합니다';
-      }
-
-      if (formData.break_end_time && formData.end_time && formData.break_end_time >= formData.end_time) {
-        newErrors.break_end_time = '휴식 종료 시간은 촬영 종료 시간보다 빨라야 합니다';
-      }
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // 폼 시간 변경 핸들러
-  const handleFormTimeChange = (field: string, value: string) => {
-    const newFormData = { ...formData, [field]: value };
-
-    // 시작/종료 시간 변경 시 휴식시간 자동 조정
-    if (field === 'start_time' || field === 'end_time') {
-      if (newFormData.break_time_enabled && newFormData.start_time && newFormData.end_time) {
-        const recommendation = checkBreakTimeRecommendation(newFormData.start_time, newFormData.end_time);
-        
-        if (recommendation.shouldRecommend && recommendation.suggestedBreakTime) {
-          newFormData.break_start_time = recommendation.suggestedBreakTime.startTime;
-          newFormData.break_end_time = recommendation.suggestedBreakTime.endTime;
-          newFormData.break_duration_minutes = recommendation.suggestedBreakTime.durationMinutes;
-        }
-      }
-    }
-
-    setFormData(newFormData);
-  };
-
-  // 휴식시간 변경 핸들러
-  const handleBreakTimeChange = (field: 'break_start_time' | 'break_end_time', value: string) => {
-    const newFormData = { ...formData, [field]: value };
-    
-    if (newFormData.break_start_time && newFormData.break_end_time) {
-      const duration = calculateBreakDuration(newFormData.break_start_time, newFormData.break_end_time);
-      newFormData.break_duration_minutes = duration;
-    }
-    
-    setFormData(newFormData);
-  };
-
-  // 휴식시간 설정 렌더링
-  const renderBreakTimeSettings = () => {
-    if (!shouldShowBreakTimeSettings(formData.start_time, formData.end_time)) {
-      return null;
-    }
-
-    const recommendation = checkBreakTimeRecommendation(formData.start_time, formData.end_time);
 
     return (
       <div style={{
-        padding: 'clamp(12px, 3vw, 16px)',
-        backgroundColor: '#f8f9fa',
-        borderRadius: '8px',
-        border: '1px solid #dee2e6',
-        marginBottom: 'clamp(12px, 3vw, 16px)'
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
+        padding: 'clamp(8px, 2vw, 10px)'
       }}>
-        <h4 style={{ 
-          margin: '0 0 12px 0', 
-          color: '#374151',
-          fontSize: 'clamp(14px, 3.5vw, 16px)'
-        }}>
-          휴식시간 설정 (4시간 이상 촬영)
-        </h4>
-        
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{
-            display: 'flex', 
-            alignItems: 'center', 
-            cursor: 'pointer',
-            fontSize: 'clamp(14px, 3.5vw, 16px)',
-            fontWeight: '500'
-          }}>
-            <input
-              type="checkbox"
-              checked={formData.break_time_enabled}
-              onChange={(e) => {
-                const enabled = e.target.checked;
-                if (enabled && recommendation.shouldRecommend && recommendation.suggestedBreakTime) {
-                  setFormData(prev => ({
-                    ...prev,
-                    break_time_enabled: true,
-                    break_start_time: recommendation.suggestedBreakTime!.startTime,
-                    break_end_time: recommendation.suggestedBreakTime!.endTime,
-                    break_duration_minutes: recommendation.suggestedBreakTime!.durationMinutes
-                  }));
-                } else {
-                  setFormData(prev => ({
-                    ...prev,
-                    break_time_enabled: enabled,
-                    break_start_time: enabled ? prev.break_start_time : undefined,
-                    break_end_time: enabled ? prev.break_end_time : undefined,
-                    break_duration_minutes: enabled ? prev.break_duration_minutes : 0
-                  }));
-                }
-              }}
-              style={{ 
-                marginRight: '8px', 
-                transform: 'scale(1.2)' 
-              }}
-            />
-            휴식시간 사용
-          </label>
-          
-          {recommendation.shouldRecommend && (
-            <p style={{ 
-              color: '#059669', 
-              fontSize: 'clamp(12px, 3vw, 13px)', 
-              margin: '6px 0 0 0',
-              fontWeight: '500'
-            }}>
-              {recommendation.reason}
-            </p>
-          )}
-        </div>
+        {/* 개발 테스트 모드 */}
+        {showDevMode && (
+          <DevTestMode
+            onClose={() => setShowDevMode(false)}
+            onDateSelect={handleDevDateSelect}
+            testDate={testDate}
+          />
+        )}
 
-        {formData.break_time_enabled && (
+        {/* 제작센터 연락 모달 */}
+        <ContactModal
+          open={showContactModal}
+          onClose={() => setShowContactModal(false)}
+          scheduleInfo={contactScheduleInfo}
+        />
+
+        {/* 승인 요청 모달 */}
+        <ApprovalRequestModal
+          open={showApprovalModal}
+          onClose={() => setShowApprovalModal(false)}
+          onConfirm={handleApprovalRequest}
+          schedule={approvalSchedule}
+          requestType={approvalRequestType}
+        />
+
+        {/* 수정 모달 */}
+        <EditScheduleModal
+          open={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingSchedule(null);
+          }}
+          schedule={editingSchedule}
+          onSave={handleEditScheduleSave}
+          shootingTypes={shootingTypes}
+          availableDates={availableDates}
+        />
+
+        {/* 상세보기 모달 */}
+        <ScheduleDetailModal
+          open={showDetailModal}
+          onClose={() => setShowDetailModal(false)}
+          schedule={detailSchedule}
+          onEdit={() => handleEditSchedule(detailSchedule)}
+          onCancel={() => handleCancelSchedule(detailSchedule)}
+          isPastSchedule={isPastSchedule}
+          isCancelledSchedule={isCancelledSchedule}
+          canEditSchedule={canEditSchedule}
+          getStatusInfo={getStatusInfo}
+          userRoles={userRoles}
+        />
+
+        <div style={{
+          maxWidth: '600px',
+          margin: '0 auto',
+          padding: '0 clamp(8px, 2vw, 10px)'
+        }}>
           <div style={{
-            padding: 'clamp(12px, 3vw, 16px)',
-            backgroundColor: '#f0f9ff',
-            borderRadius: '8px',
-            border: '1px solid #dbeafe'
+            background: 'white',
+            borderRadius: '12px',
+            padding: 'clamp(16px, 4vw, 24px)',
+            marginBottom: '16px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
           }}>
             <div style={{
-              display: 'grid', 
-              gridTemplateColumns: '1fr 1fr auto',
-              gap: 'clamp(8px, 2vw, 12px)', 
-              alignItems: 'end', 
-              marginBottom: '16px'
+              textAlign: 'center',
+              marginBottom: 'clamp(16px, 4vw, 20px)',
+              paddingBottom: 'clamp(12px, 3vw, 16px)',
+              borderBottom: '1px solid #e5e7eb'
             }}>
-              <div>
-                <label style={{ 
-                  display: 'block', 
-                  marginBottom: '6px', 
-                  fontSize: 'clamp(12px, 3vw, 14px)',
-                  fontWeight: '500',
-                  color: '#374151'
-                }}>
-                  시작
-                </label>
-                <select
-                  value={formData.break_start_time || ''}
-                  onChange={(e) => handleBreakTimeChange('break_start_time', e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: 'clamp(8px, 2vw, 10px)',
-                    border: `1px solid ${errors.break_start_time ? '#f44336' : '#d1d5db'}`,
-                    borderRadius: '6px',
-                    fontSize: 'clamp(12px, 3vw, 14px)',
-                    textAlign: 'center'
-                  }}>
-                  <option value="">시작</option>
-                  {generateBreakTimeOptionsInRange(formData.start_time, formData.end_time).map(time => (
-                    <option key={time} value={time}>{time}</option>
-                  ))}
-                </select>
-                {errors.break_start_time && (
-                  <span style={{ 
-                    color: '#f44336', 
-                    fontSize: 'clamp(10px, 2.5vw, 11px)',
-                    marginTop: 2, 
-                    display: 'block' 
-                  }}>
-                    {errors.break_start_time}
-                  </span>
-                )}
-              </div>
-              
-              <div>
-                <label style={{ 
-                  display: 'block', 
-                  marginBottom: '6px', 
-                  fontSize: 'clamp(12px, 3vw, 14px)',
-                  fontWeight: '500',
-                  color: '#374151'
-                }}>
-                  종료
-                </label>
-                <select
-                  value={formData.break_end_time || ''}
-                  onChange={(e) => handleBreakTimeChange('break_end_time', e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: 'clamp(8px, 2vw, 10px)',
-                    border: `1px solid ${errors.break_end_time ? '#f44336' : '#d1d5db'}`,
-                    borderRadius: '6px',
-                    fontSize: 'clamp(12px, 3vw, 14px)',
-                    textAlign: 'center'
-                  }}>
-                  <option value="">종료</option>
-                  {generateBreakTimeOptionsInRange(formData.start_time, formData.end_time).map(time => (
-                    <option key={time} value={time}>{time}</option>
-                  ))}
-                </select>
-                {errors.break_end_time && (
-                  <span style={{ 
-                    color: '#f44336', 
-                    fontSize: 'clamp(10px, 2.5vw, 11px)',
-                    marginTop: 2, 
-                    display: 'block' 
-                  }}>
-                    {errors.break_end_time}
-                  </span>
-                )}
-              </div>
-              
               <div style={{
-                padding: 'clamp(8px, 2vw, 10px)', 
-                backgroundColor: 'white', 
-                borderRadius: '6px',
-                border: '1px solid #d1d5db', 
-                fontSize: 'clamp(12px, 3vw, 14px)', 
-                fontWeight: '500',
-                color: '#374151', 
-                textAlign: 'center', 
-                whiteSpace: 'nowrap',
-                minHeight: 'clamp(32px, 8vw, 38px)',
+                width: 'clamp(100px, 25vw, 140px)',
+                height: 'clamp(30px, 8vw, 50px)',
+                margin: '0 auto 12px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}>
-                {formData.break_duration_minutes}분
+                <img
+                  src="https://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
+                  alt="에듀윌 로고"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain'
+                  }}
+                />
               </div>
-            </div>
-            
-            <div style={{
-              padding: 'clamp(8px, 2vw, 12px)', 
-              backgroundColor: 'white', 
-              borderRadius: '6px',
-              fontSize: 'clamp(11px, 2.5vw, 12px)', 
-              border: '1px solid #e5e7eb'
-            }}>
-              <div style={{ 
-                fontWeight: '500', 
-                marginBottom: '6px', 
-                color: '#374151' 
+              <h1 style={{
+                color: '#1f2937',
+                fontSize: 'clamp(18px, 4.5vw, 24px)',
+                marginBottom: '6px',
+                fontWeight: '600',
+                lineHeight: '1.2'
               }}>
-                분할 스케줄 예상
-              </div>
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: '3px' 
+                안녕하세요. {managerInfo?.name} 님
+              </h1>
+              <p style={{
+                color: '#6b7280',
+                fontSize: 'clamp(14px, 3.5vw, 16px)',
+                margin: '0 0 12px 0'
               }}>
-                <div>
-                  <span style={{ color: '#4caf50', fontWeight: '500' }}>1차:</span> {formData.start_time} ~ {formData.break_start_time}
-                </div>
-                <div>
-                  <span style={{ color: '#6c757d', fontWeight: '500' }}>휴식:</span> {formData.break_start_time} ~ {formData.break_end_time} ({formData.break_duration_minutes}분)
-                </div>
-                <div>
-                  <span style={{ color: '#2196f3', fontWeight: '500' }}>2차:</span> {formData.break_end_time} ~ {formData.end_time}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 스케줄 등록 제출
-  const submitShootingRequest = async () => {
-    if (!validateForm()) {
-      alert('필수 항목을 모두 입력해주세요');
-      return;
-    }
-
-    try {
-      const conflictCheck = await checkScheduleConflictAndRecommend(formData);
-      
-      if (conflictCheck.hasConflict) {
-        alert(conflictCheck.conflictMessage);
-        return;
-      }
-
-      const confirmSubmit = confirm(
-        `${formData.professor_name} 교수님 촬영을 요청하시겠습니까?\n\n` +
-        `날짜: ${formData.shoot_date}\n` +
-        `시간: ${formData.start_time} ~ ${formData.end_time}\n` +
-        `촬영형식: ${formData.shooting_type}`
-      );
-
-      if (!confirmSubmit) return;
-
-      const result = await createScheduleGroup(formData);
-
-      // 관리자에게 승인 요청 메시지 발송
-      // 🔧 메시지 발송 - await 추가!
-      const message = await generateAdminMessage('approval', formData, managerInfo?.name || '매니저');
-
-      try {
-      // 메시지 발송
-      sendMessage(message, 'channel', []);
-
-      } catch (err) {
-        console.log('메시지 발송 실패:', err);
-      }
-
-      alert(result.message);
-      resetForm();
-      if (showScheduleList) {
-        fetchAllSchedules(false);
-      }
-
-    } catch (error) {
-      console.error('등록 오류:', error);
-      alert('등록 중 오류가 발생했습니다: ' + error.message);
-    }
-  };
-
-  // 폼 초기화
-  const resetForm = () => {
-    setFormData({
-      shoot_date: '',
-      start_time: '',
-      end_time: '',
-      professor_name: '',
-      course_name: '',
-      course_code: '',
-      shooting_type: '',
-      notes: '',
-      break_time_enabled: false,
-      break_start_time: undefined,
-      break_end_time: undefined,
-      break_duration_minutes: 0,
-      schedule_group_id: undefined,
-      is_split_schedule: false
-    });
-    setErrors({});
-    setSelectedProfessorInfo(null);
-  };
-
-  // 개발 테스트 날짜 선택 핸들러
-  const handleDevDateSelect = (date: string) => {
-    setTestDate(date);
-  };
-
-  // 스케줄 상태 정보
-  const getStatusInfo = (status: string, isActive: boolean = true) => {
-    if (isActive === false || status === "cancelled") {
-      return { text: "취소됨", bg: "#f5f5f5", color: "#6c757d" };
-    }
-    
-    switch (status) {
-      case "modification_requested":
-        return { text: "수정 승인 대기중", bg: "#f3e5f5", color: "#7b1fa2" };
-      case "modification_approved":
-        return { text: "수정 승인됨", bg: "#e8f5e8", color: "#2e7d32" };
-      case "cancellation_requested":
-        return { text: "취소 승인 대기중", bg: "#fce4ec", color: "#ad1457" };
-      case "pending":
-        return { text: "승인 대기중", bg: "#fbbf24", color: "#92400e" };
-      case "approved":
-        return { text: "촬영확정", bg: "#e3f2fd", color: "#1976d2" };
-      case "confirmed":
-        return { text: "촬영확정", bg: "#e3f2fd", color: "#1976d2" };
-      default:
-        return { text: status, bg: "#f5f5f5", color: "#616161" };
-    }
-  };
-
-  // 과거 스케줄 여부 확인
-  const isPastSchedule = (date: string): boolean => {
-    const today = testDate ? new Date(testDate) : new Date();
-    const scheduleDate = new Date(date);
-    return scheduleDate < today;
-  };
-
-  // 취소된 스케줄 여부 확인
-  const isCancelledSchedule = (schedule: any): boolean => {
-    return schedule.is_active === false ||
-           schedule.approval_status === 'cancelled' ||
-           (schedule.deletion_reason && schedule.deletion_reason !== 'split_converted');
-  };
-
-  // 로그인하지 않은 경우 로그인 화면 표시
-  if (!managerInfo) {
-    return (
-      <div style={{ 
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'clamp(16px, 4vw, 20px)'
-      }}>
-        <div style={{
-          background: 'white',
-          borderRadius: '12px',
-          padding: 'clamp(24px, 6vw, 32px)',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-          maxWidth: '400px',
-          width: '100%',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ 
-            marginBottom: '24px',
-            fontSize: 'clamp(20px, 5vw, 24px)',
-            color: '#1f2937'
-          }}>
-            스튜디오 스케줄 관리
-          </h2>
-          
-          <p style={{ 
-            marginBottom: '24px',
-            color: '#6b7280',
-            fontSize: 'clamp(14px, 3.5vw, 16px)'
-          }}>
-            매니저 권한이 필요합니다
-          </p>
-          
-          <button
-            onClick={() => {
-              localStorage.setItem('userRole', 'academy_manager');
-              localStorage.setItem('userName', '테스트매니저');
-              localStorage.setItem('userEmail', 'manager@test.com');
-              window.location.reload();
-            }}
-            style={{
-              padding: 'clamp(10px, 3vw, 12px) clamp(20px, 5vw, 24px)',
-              background: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: 'clamp(14px, 3.5vw, 16px)',
-              fontWeight: '500'
-            }}
-          >
-            테스트용 매니저 로그인
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ 
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
-      padding: 'clamp(8px, 2vw, 10px)'
-    }}>
-      {/* 개발 테스트 모드 */}
-      {showDevMode && (
-        <DevTestMode 
-          onClose={() => setShowDevMode(false)} 
-          onDateSelect={handleDevDateSelect}
-          testDate={testDate}
-        />
-      )}
-      
-      {/* 제작센터 연락 모달 */}
-      <ContactModal
-        open={showContactModal}
-        onClose={() => setShowContactModal(false)}
-        scheduleInfo={contactScheduleInfo}
-      />
-
-      {/* 승인 요청 모달 */}
-      <ApprovalRequestModal
-        open={showApprovalModal}
-        onClose={() => setShowApprovalModal(false)}
-        onConfirm={handleApprovalRequest}
-        schedule={approvalSchedule}
-        requestType={approvalRequestType}
-      />
-
-      {/* 수정 모달 */}
-      <EditScheduleModal
-        open={showEditModal}
-        onClose={() => {
-          setShowEditModal(false);
-          setEditingSchedule(null);
-        }}
-        schedule={editingSchedule}
-        onSave={handleEditScheduleSave}
-        shootingTypes={shootingTypes}
-        availableDates={availableDates}
-      />
-
-      {/* 상세보기 모달 */}
-      <ScheduleDetailModal
-        open={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        schedule={detailSchedule}
-        onEdit={() => handleEditSchedule(detailSchedule)}
-        onCancel={() => handleCancelSchedule(detailSchedule)}
-        isPastSchedule={isPastSchedule}
-        isCancelledSchedule={isCancelledSchedule}
-        canEditSchedule={canEditSchedule}
-        getStatusInfo={getStatusInfo}
-        userRoles={userRoles}
-      />
-
-      <div style={{ 
-        maxWidth: '600px', 
-        margin: '0 auto', 
-        padding: '0 clamp(8px, 2vw, 10px)'
-      }}>
-        <div style={{ 
-          background: 'white',
-          borderRadius: '12px',
-          padding: 'clamp(16px, 4vw, 24px)',
-          marginBottom: '16px',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-        }}>
-          <div style={{ 
-            textAlign: 'center',
-            marginBottom: 'clamp(16px, 4vw, 20px)',
-            paddingBottom: 'clamp(12px, 3vw, 16px)',
-            borderBottom: '1px solid #e5e7eb'
-          }}>
-            <div style={{ 
-              width: 'clamp(100px, 25vw, 140px)',
-              height: 'clamp(30px, 8vw, 50px)',
-              margin: '0 auto 12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <img 
-                src="https://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
-                alt="에듀윌 로고"
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain'
-                }}
-              />
-            </div>
-            <h1 style={{ 
-              color: '#1f2937', 
-              fontSize: 'clamp(18px, 4.5vw, 24px)',
-              marginBottom: '6px',
-              fontWeight: '600',
-              lineHeight: '1.2'
-            }}>
-              안녕하세요. {managerInfo?.name} 님
-            </h1>
-            <p style={{ 
-              color: '#6b7280', 
-              fontSize: 'clamp(14px, 3.5vw, 16px)',
-              margin: '0 0 12px 0'
-            }}>
-              스튜디오 스케줄 관리 시스템
-            </p>
-            <p style={{ 
-              color: '#9ca3af',
-              fontSize: 'clamp(12px, 3vw, 14px)',
-              margin: 0
-            }}>
-              교수님의 촬영 스케줄을 등록 및 관리해 주세요
-            </p>
-            
-            {/* 개발 모드 표시 */}
-            {isDevModeActive && (
-              <div style={{
-                marginTop: '8px',
-                padding: '6px 12px',
-                backgroundColor: '#4caf50',
-                color: 'white',
-                borderRadius: '20px',
-                fontSize: 'clamp(10px, 2.5vw, 12px)',
-                fontWeight: '500',
-                display: 'inline-block'
+                스튜디오 스케줄 관리 시스템
+              </p>
+              <p style={{
+                color: '#9ca3af',
+                fontSize: 'clamp(12px, 3vw, 14px)',
+                margin: 0
               }}>
-                개발 테스트 모드 활성화
-              </div>
-            )}
-          </div>
-          
-          <div style={{ display: 'grid', gap: 'clamp(12px, 3vw, 16px)' }}>
-            
-            {/* 1. 교수명 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px', 
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                교수명 *
-              </label>
-              <ProfessorAutocomplete
-                value={formData.professor_name}
-                onChange={handleProfessorChange}
-                placeholder="교수명을 입력하면 자동완성됩니다"
-                disabled={false}
-                required
-                style={{
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  borderColor: errors.professor_name ? '#f44336' : '#d1d5db'
-                }}
-              />
-              {selectedProfessorInfo && selectedProfessorInfo.category_name && (
-                <p style={{ 
-                  color: '#059669', 
-                  fontSize: 'clamp(11px, 2.5vw, 12px)', 
-                  margin: '4px 0 0 0',
-                  fontWeight: '500'
-                }}>
-                  매칭됨: {selectedProfessorInfo.category_name}
-                </p>
-              )}
-              {errors.professor_name && (
-                <span style={{ 
-                  color: '#f44336', 
-                  fontSize: 'clamp(11px, 2.5vw, 12px)',
-                  marginTop: 4, 
-                  display: 'block' 
-                }}>
-                  {errors.professor_name}
-                </span>
-              )}
-            </div>
+                교수님의 촬영 스케줄을 등록 및 관리해 주세요
+              </p>
 
-            {/* 2. 촬영 날짜 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px', 
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                촬영 날짜 *
-              </label>
-              
-              {!isDevModeActive && (
-                <div style={{
-                  backgroundColor: '#f0f9ff',
-                  border: '1px solid #dbeafe',
-                  borderRadius: '6px',
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  marginBottom: '8px',
-                  fontSize: 'clamp(12px, 3vw, 14px)'
-                }}>
-                  <div style={{ 
-                    color: '#1e40af',
-                    fontWeight: '500',
-                    marginBottom: '2px'
-                  }}>
-                    이번 등록 대상: {registrationInfo.weekInfo} (2주간)
-                  </div>
-                  <div style={{ color: '#1e3a8a' }}>
-                    매주 월요일에 차차주 2주간 스케줄 등록이 가능합니다.
-                  </div>
-                </div>
-              )}
-              
+              {/* 개발 모드 표시 */}
               {isDevModeActive && (
                 <div style={{
-                  backgroundColor: '#ecfdf5',
-                  border: '1px solid #4caf50',
-                  borderRadius: '6px',
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  marginBottom: '8px',
-                  fontSize: 'clamp(12px, 3vw, 14px)'
+                  marginTop: '8px',
+                  padding: '6px 12px',
+                  backgroundColor: '#4caf50',
+                  color: 'white',
+                  borderRadius: '20px',
+                  fontSize: 'clamp(10px, 2.5vw, 12px)',
+                  fontWeight: '500',
+                  display: 'inline-block'
                 }}>
-                  <div style={{ 
-                    color: '#2e7d32',
-                    fontWeight: '500',
-                    marginBottom: '2px'
-                  }}>
-                    개발 테스트 모드: 모든 날짜 선택 가능
-                  </div>
-                  <div style={{ color: '#1b5e20' }}>
-                    과거/미래 날짜, 주말 포함 모든 날짜로 테스트할 수 있습니다.
-                  </div>
+                  개발 테스트 모드 활성화
                 </div>
-              )}
-              
-              <select 
-                value={formData.shoot_date} 
-                onChange={(e) => setFormData({...formData, shoot_date: e.target.value})} 
-                style={{ 
-                  width: '100%', 
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  border: `1px solid ${errors.shoot_date ? '#f44336' : '#d1d5db'}`, 
-                  borderRadius: '8px',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }} 
-                required 
-              >
-                <option value="">날짜 선택</option>
-                {availableDates.map(date => (
-                  <option key={date.value} value={date.value}>{date.label}</option>
-                ))}
-              </select>
-              {errors.shoot_date && (
-                <span style={{ 
-                  color: '#f44336', 
-                  fontSize: 'clamp(11px, 2.5vw, 12px)',
-                  marginTop: 4, 
-                  display: 'block' 
-                }}>
-                  {errors.shoot_date}
-                </span>
               )}
             </div>
 
-            {/* 3. 촬영 시간 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px',
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                촬영 시간 *
-              </label>
-              
-              <div style={{ 
-                display: 'flex',
-                gap: '12px',
-                alignItems: 'flex-end'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                    display: 'block', 
-                    marginBottom: '4px',
-                    fontSize: 'clamp(12px, 3vw, 14px)',
-                    fontWeight: '500',
-                    color: '#6b7280'
-                  }}>
-                    시작
-                  </label>
-                  <select 
-                    value={formData.start_time} 
-                    onChange={(e) => handleFormTimeChange('start_time', e.target.value)}
-                    style={{ 
-                      width: '100%', 
-                      padding: 'clamp(8px, 2vw, 10px)',
-                      border: `1px solid ${errors.start_time ? '#f44336' : '#d1d5db'}`, 
-                      borderRadius: '6px',
-                      fontSize: 'clamp(12px, 3vw, 14px)',
-                      outline: 'none'
-                    }} 
-                    required 
-                  >
-                    <option value="">시작 시간</option>
-                    {timeOptions.map(time => (
-                      <option key={time} value={time}>{time}</option>
-                    ))}
-                  </select>
-                  {errors.start_time && (
-                    <span style={{ 
-                      color: '#f44336', 
-                      fontSize: 'clamp(10px, 2.5vw, 11px)',
-                      marginTop: 2,
-                      display: 'block' 
-                    }}>
-                      {errors.start_time}
-                    </span>
-                  )}
-                </div>
-                
-                <div style={{ 
-                  flex: 0,
-                  flexShrink: 0,
-                  paddingBottom: errors.start_time || errors.end_time ? '16px' : '6px'
+            <div style={{ display: 'grid', gap: 'clamp(12px, 3vw, 16px)' }}>
+
+              {/* 1. 교수명 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
                 }}>
-                  <span style={{ 
-                    color: '#6b7280',
+                  교수명 *
+                </label>
+                <ProfessorAutocomplete
+                  value={formData.professor_name}
+                  onChange={handleProfessorChange}
+                  placeholder="교수명을 입력하면 자동완성됩니다"
+                  disabled={false}
+                  required
+                  style={{
                     fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    borderColor: errors.professor_name ? '#f44336' : '#d1d5db'
+                  }}
+                />
+                {selectedProfessorInfo && selectedProfessorInfo.category_name && (
+                  <p style={{
+                    color: '#059669',
+                    fontSize: 'clamp(11px, 2.5vw, 12px)',
+                    margin: '4px 0 0 0',
                     fontWeight: '500'
                   }}>
-                    ~
+                    매칭됨: {selectedProfessorInfo.category_name}
+                  </p>
+                )}
+                {errors.professor_name && (
+                  <span style={{
+                    color: '#f44336',
+                    fontSize: 'clamp(11px, 2.5vw, 12px)',
+                    marginTop: 4,
+                    display: 'block'
+                  }}>
+                    {errors.professor_name}
                   </span>
-                </div>
-                
-                <div style={{ flex: 1 }}>
-                  <label style={{ 
-                    display: 'block', 
-                    marginBottom: '4px',
-                    fontSize: 'clamp(12px, 3vw, 14px)',
-                    fontWeight: '500',
-                    color: '#6b7280'
-                  }}>
-                    종료
-                  </label>
-                  <select 
-                    value={formData.end_time} 
-                    onChange={(e) => handleFormTimeChange('end_time', e.target.value)}
-                    style={{ 
-                      width: '100%', 
-                      padding: 'clamp(8px, 2vw, 10px)',
-                      border: `1px solid ${errors.end_time ? '#f44336' : '#d1d5db'}`, 
-                      borderRadius: '6px',
-                      fontSize: 'clamp(12px, 3vw, 14px)',
-                      outline: 'none'
-                    }} 
-                    required 
-                  >
-                    <option value="">종료 시간</option>
-                    {timeOptions.map(time => (
-                      <option key={time} value={time}>{time}</option>
-                    ))}
-                  </select>
-                  {errors.end_time && (
-                    <span style={{ 
-                      color: '#f44336', 
-                      fontSize: 'clamp(10px, 2.5vw, 11px)',
-                      marginTop: 2,
-                      display: 'block' 
-                    }}>
-                      {errors.end_time}
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
-            </div>
 
-            {/* 4. 휴식시간 설정 */}
-            {renderBreakTimeSettings()}
-
-            {/* 5. 과정명 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px', 
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                과정명
-              </label>
-              <input 
-                type="text" 
-                value={formData.course_name}
-                onChange={(e) => setFormData({...formData, course_name: e.target.value})} 
-                placeholder="예: 9급공무원, 공인중개사 등"
-                style={{ 
-                  width: '100%', 
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  border: '1px solid #d1d5db', 
-                  borderRadius: '8px',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }} 
-              />
-            </div>
-
-            {/* 6. 과정 코드 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px', 
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                과정 코드
-              </label>
-              <input 
-                type="text" 
-                value={formData.course_code} 
-                onChange={(e) => setFormData({...formData, course_code: e.target.value})} 
-                placeholder="예: PUB001, CER002 등"
-                style={{ 
-                  width: '100%', 
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  border: '1px solid #d1d5db', 
-                  borderRadius: '8px',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }} 
-              />
-            </div>
-
-            {/* 7. 촬영 형식 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px', 
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                촬영 형식 *
-              </label>
-              <select 
-                value={formData.shooting_type} 
-                onChange={(e) => setFormData({...formData, shooting_type: e.target.value})}
-                style={{ 
-                  width: '100%', 
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  border: `1px solid ${errors.shooting_type ? '#f44336' : '#d1d5db'}`, 
-                  borderRadius: '8px',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  outline: 'none',
-                  boxSizing: 'border-box'
-                }} 
-                required 
-              >
-                <option value="">촬영 형식 선택</option>
-                {shootingTypes.map(type => (
-                  <option key={type.id} value={type.name}>{type.name}</option>
-                ))}
-              </select>
-              {errors.shooting_type && (
-                <span style={{ 
-                  color: '#f44336', 
-                  fontSize: 'clamp(11px, 2.5vw, 12px)',
-                  marginTop: 4, 
-                  display: 'block' 
+              {/* 2. 촬영 날짜 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
                 }}>
-                  {errors.shooting_type}
-                </span>
-              )}
-            </div>
+                  촬영 날짜 *
+                </label>
 
-            {/* 8. 비고 */}
-            <div>
-              <label style={{ 
-                display: 'block', 
-                marginBottom: '6px', 
-                fontWeight: '500', 
-                color: '#374151',
-                fontSize: 'clamp(14px, 3.5vw, 16px)'
-              }}>
-                비고
-              </label>
-              <textarea 
-                value={formData.notes} 
-                onChange={(e) => setFormData({...formData, notes: e.target.value})} 
-                placeholder="특이사항이나 요청사항을 입력해주세요"
-                rows={3}
-                style={{ 
-                  width: '100%', 
-                  padding: 'clamp(10px, 2.5vw, 12px)',
-                  border: '1px solid #d1d5db', 
-                  borderRadius: '8px',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  outline: 'none',
-                  resize: 'vertical',
-                  minHeight: 'clamp(60px, 15vw, 80px)',
-                  boxSizing: 'border-box'
-                }} 
-              />
-            </div>
-
-            {/* 제출 버튼 */}
-            <button
-              type="button"
-              onClick={submitShootingRequest}
-              style={{
-                width: '100%',
-                padding: 'clamp(12px, 3vw, 16px)',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: 'clamp(16px, 4vw, 18px)',
-                fontWeight: '600',
-                cursor: 'pointer',
-                marginTop: 'clamp(8px, 2vw, 12px)',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 2px 4px rgba(59, 130, 246, 0.2)'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = '#2563eb';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 4px 8px rgba(59, 130, 246, 0.3)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.backgroundColor = '#3b82f6';
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 2px 4px rgba(59, 130, 246, 0.2)';
-              }}
-            >
-              촬영 등록하기
-            </button>
-          </div>
-        </div>
-
-        {/* 전체 스케줄 관리 섹션 */}
-        <div style={{ 
-          background: 'white',
-          borderRadius: '12px',
-          padding: 'clamp(16px, 4vw, 24px)',
-          marginBottom: '16px',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            marginBottom: 'clamp(16px, 4vw, 20px)',
-            flexWrap: 'wrap',
-            gap: '12px'
-          }}>
-            <h2 style={{ 
-              color: '#1f2937', 
-              fontSize: 'clamp(18px, 4.5vw, 22px)',
-              margin: 0,
-              fontWeight: '600'
-            }}>
-              전체 스케줄 관리
-            </h2>
-            <button
-              onClick={() => {
-                const newShowState = !showScheduleList;
-                setShowScheduleList(newShowState);
-                if (newShowState && managerInfo) {
-                  fetchAllSchedules(false);
-                }
-              }}
-              style={{
-                padding: 'clamp(8px, 2vw, 10px) clamp(12px, 3vw, 16px)',
-                backgroundColor: showScheduleList ? '#dc2626' : '#059669',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: 'clamp(12px, 3vw, 14px)',
-                fontWeight: '500',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {showScheduleList ? '목록 숨기기' : '목록 보기'}
-            </button>
-          </div>
-
-          {showScheduleList && (
-            <>
-              {/* 검색 필터 */}
-              <div style={{ 
-                backgroundColor: '#f8f9fa',
-                padding: 'clamp(12px, 3vw, 16px)',
-                borderRadius: '8px',
-                marginBottom: 'clamp(16px, 4vw, 20px)',
-                border: '1px solid #e9ecef'
-              }}>
-                <h3 style={{ 
-                  margin: '0 0 16px 0',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)',
-                  fontWeight: '600',
-                  color: '#495057'
-                }}>
-                  검색 필터
-                </h3>
-                
-                {/* 교수명 검색 */}
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ 
-                    display: 'block', 
-                    marginBottom: '6px',
-                    fontSize: 'clamp(12px, 3vw, 14px)',
-                    fontWeight: '500',
-                    color: '#374151'
+                {!isDevModeActive && (
+                  <div style={{
+                    backgroundColor: '#f0f9ff',
+                    border: '1px solid #dbeafe',
+                    borderRadius: '6px',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    marginBottom: '8px',
+                    fontSize: 'clamp(12px, 3vw, 14px)'
                   }}>
-                    교수명으로 검색
-                  </label>
-                  <input
-                    type="text"
-                    value={searchFilters.professor_name}
-                    onChange={(e) => setSearchFilters(prev => ({ 
-                      ...prev, 
-                      professor_name: e.target.value 
-                    }))}
-                    placeholder="교수명을 입력하세요"
-                    style={{
-                      width: '100%',
-                      padding: 'clamp(10px, 2.5vw, 12px)',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: 'clamp(14px, 3.5vw, 16px)',
-                      outline: 'none',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-
-                {/* 날짜 범위 검색 */}
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ 
-                    display: 'block', 
-                    marginBottom: '6px',
-                    fontSize: 'clamp(12px, 3vw, 14px)',
-                    fontWeight: '500',
-                    color: '#374151'
-                  }}>
-                    촬영 기간으로 검색
-                  </label>
-                  <div style={{ 
-                    display: 'grid',
-                    gridTemplateColumns: '1fr auto 1fr',
-                    gap: '12px',
-                    alignItems: 'center'
-                  }}>
-                    <div>
-                      <input
-                        type="date"
-                        value={searchFilters.start_date}
-                        onChange={(e) => setSearchFilters(prev => ({ 
-                          ...prev, 
-                          start_date: e.target.value 
-                        }))}
-                        style={{
-                          width: '100%',
-                          padding: 'clamp(10px, 2.5vw, 12px)',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          fontSize: 'clamp(14px, 3.5vw, 16px)',
-                          outline: 'none',
-                          boxSizing: 'border-box'
-                        }}
-                      />
+                    <div style={{
+                      color: '#1e40af',
+                      fontWeight: '500',
+                      marginBottom: '2px'
+                    }}>
+                      이번 등록 대상: {registrationInfo.weekInfo} (2주간)
                     </div>
-                    
-                    <span style={{ 
+                    <div style={{ color: '#1e3a8a' }}>
+                      매주 월요일에 차차주 2주간 스케줄 등록이 가능합니다.
+                    </div>
+                  </div>
+                )}
+
+                {isDevModeActive && (
+                  <div style={{
+                    backgroundColor: '#ecfdf5',
+                    border: '1px solid #4caf50',
+                    borderRadius: '6px',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    marginBottom: '8px',
+                    fontSize: 'clamp(12px, 3vw, 14px)'
+                  }}>
+                    <div style={{
+                      color: '#2e7d32',
+                      fontWeight: '500',
+                      marginBottom: '2px'
+                    }}>
+                      개발 테스트 모드: 모든 날짜 선택 가능
+                    </div>
+                    <div style={{ color: '#1b5e20' }}>
+                      과거/미래 날짜, 주말 포함 모든 날짜로 테스트할 수 있습니다.
+                    </div>
+                  </div>
+                )}
+
+                <select
+                  value={formData.shoot_date}
+                  onChange={(e) => setFormData({ ...formData, shoot_date: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    border: `1px solid ${errors.shoot_date ? '#f44336' : '#d1d5db'}`,
+                    borderRadius: '8px',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                >
+                  <option value="">날짜 선택</option>
+                  {availableDates.map(date => (
+                    <option key={date.value} value={date.value}>{date.label}</option>
+                  ))}
+                </select>
+                {errors.shoot_date && (
+                  <span style={{
+                    color: '#f44336',
+                    fontSize: 'clamp(11px, 2.5vw, 12px)',
+                    marginTop: 4,
+                    display: 'block'
+                  }}>
+                    {errors.shoot_date}
+                  </span>
+                )}
+              </div>
+
+              {/* 3. 촬영 시간 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
+                }}>
+                  촬영 시간 *
+                </label>
+
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  alignItems: 'flex-end'
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      fontWeight: '500',
+                      color: '#6b7280'
+                    }}>
+                      시작
+                    </label>
+                    <select
+                      value={formData.start_time}
+                      onChange={(e) => handleFormTimeChange('start_time', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: 'clamp(8px, 2vw, 10px)',
+                        border: `1px solid ${errors.start_time ? '#f44336' : '#d1d5db'}`,
+                        borderRadius: '6px',
+                        fontSize: 'clamp(12px, 3vw, 14px)',
+                        outline: 'none'
+                      }}
+                      required
+                    >
+                      <option value="">시작 시간</option>
+                      {timeOptions.map(time => (
+                        <option key={time} value={time}>{time}</option>
+                      ))}
+                    </select>
+                    {errors.start_time && (
+                      <span style={{
+                        color: '#f44336',
+                        fontSize: 'clamp(10px, 2.5vw, 11px)',
+                        marginTop: 2,
+                        display: 'block'
+                      }}>
+                        {errors.start_time}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{
+                    flex: 0,
+                    flexShrink: 0,
+                    paddingBottom: errors.start_time || errors.end_time ? '16px' : '6px'
+                  }}>
+                    <span style={{
                       color: '#6b7280',
                       fontSize: 'clamp(14px, 3.5vw, 16px)',
                       fontWeight: '500'
                     }}>
                       ~
                     </span>
-                    
-                    <div>
-                      <input
-                        type="date"
-                        value={searchFilters.end_date}
-                        onChange={(e) => setSearchFilters(prev => ({ 
-                          ...prev, 
-                          end_date: e.target.value 
-                        }))}
-                        style={{
-                          width: '100%',
-                          padding: 'clamp(10px, 2.5vw, 12px)',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          fontSize: 'clamp(14px, 3.5vw, 16px)',
-                          outline: 'none',
-                          boxSizing: 'border-box'
-                        }}
-                      />
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <label style={{
+                      display: 'block',
+                      marginBottom: '4px',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      fontWeight: '500',
+                      color: '#6b7280'
+                    }}>
+                      종료
+                    </label>
+                    <select
+                      value={formData.end_time}
+                      onChange={(e) => handleFormTimeChange('end_time', e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: 'clamp(8px, 2vw, 10px)',
+                        border: `1px solid ${errors.end_time ? '#f44336' : '#d1d5db'}`,
+                        borderRadius: '6px',
+                        fontSize: 'clamp(12px, 3vw, 14px)',
+                        outline: 'none'
+                      }}
+                      required
+                    >
+                      <option value="">종료 시간</option>
+                      {timeOptions.map(time => (
+                        <option key={time} value={time}>{time}</option>
+                      ))}
+                    </select>
+                    {errors.end_time && (
+                      <span style={{
+                        color: '#f44336',
+                        fontSize: 'clamp(10px, 2.5vw, 11px)',
+                        marginTop: 2,
+                        display: 'block'
+                      }}>
+                        {errors.end_time}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. 휴식시간 설정 */}
+              {renderBreakTimeSettings()}
+
+              {/* 5. 과정명 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
+                }}>
+                  과정명
+                </label>
+                <input
+                  type="text"
+                  value={formData.course_name}
+                  onChange={(e) => setFormData({ ...formData, course_name: e.target.value })}
+                  placeholder="예: 9급공무원, 공인중개사 등"
+                  style={{
+                    width: '100%',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* 6. 과정 코드 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
+                }}>
+                  과정 코드
+                </label>
+                <input
+                  type="text"
+                  value={formData.course_code}
+                  onChange={(e) => setFormData({ ...formData, course_code: e.target.value })}
+                  placeholder="예: PUB001, CER002 등"
+                  style={{
+                    width: '100%',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* 7. 촬영 형식 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
+                }}>
+                  촬영 형식 *
+                </label>
+                <select
+                  value={formData.shooting_type}
+                  onChange={(e) => setFormData({ ...formData, shooting_type: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    border: `1px solid ${errors.shooting_type ? '#f44336' : '#d1d5db'}`,
+                    borderRadius: '8px',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                  required
+                >
+                  <option value="">촬영 형식 선택</option>
+                  {shootingTypes.map(type => (
+                    <option key={type.id} value={type.name}>{type.name}</option>
+                  ))}
+                </select>
+                {errors.shooting_type && (
+                  <span style={{
+                    color: '#f44336',
+                    fontSize: 'clamp(11px, 2.5vw, 12px)',
+                    marginTop: 4,
+                    display: 'block'
+                  }}>
+                    {errors.shooting_type}
+                  </span>
+                )}
+              </div>
+
+              {/* 8. 비고 */}
+              <div>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '6px',
+                  fontWeight: '500',
+                  color: '#374151',
+                  fontSize: 'clamp(14px, 3.5vw, 16px)'
+                }}>
+                  비고
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="특이사항이나 요청사항을 입력해주세요"
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: 'clamp(10px, 2.5vw, 12px)',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    outline: 'none',
+                    resize: 'vertical',
+                    minHeight: 'clamp(60px, 15vw, 80px)',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* 제출 버튼 */}
+              <button
+                type="button"
+                onClick={submitShootingRequest}
+                style={{
+                  width: '100%',
+                  padding: 'clamp(12px, 3vw, 16px)',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: 'clamp(16px, 4vw, 18px)',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  marginTop: 'clamp(8px, 2vw, 12px)',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 2px 4px rgba(59, 130, 246, 0.2)'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#2563eb';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = '0 4px 8px rgba(59, 130, 246, 0.3)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = '#3b82f6';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 4px rgba(59, 130, 246, 0.2)';
+                }}
+              >
+                촬영 등록하기
+              </button>
+            </div>
+          </div>
+
+          {/* 전체 스케줄 관리 섹션 */}
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: 'clamp(16px, 4vw, 24px)',
+            marginBottom: '16px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 'clamp(16px, 4vw, 20px)',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <h2 style={{
+                color: '#1f2937',
+                fontSize: 'clamp(18px, 4.5vw, 22px)',
+                margin: 0,
+                fontWeight: '600'
+              }}>
+                전체 스케줄 관리
+              </h2>
+              <button
+                onClick={() => {
+                  const newShowState = !showScheduleList;
+                  setShowScheduleList(newShowState);
+                  if (newShowState && managerInfo) {
+                    fetchAllSchedules(false);
+                  }
+                }}
+                style={{
+                  padding: 'clamp(8px, 2vw, 10px) clamp(12px, 3vw, 16px)',
+                  backgroundColor: showScheduleList ? '#dc2626' : '#059669',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: 'clamp(12px, 3vw, 14px)',
+                  fontWeight: '500',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {showScheduleList ? '목록 숨기기' : '목록 보기'}
+              </button>
+            </div>
+
+            {showScheduleList && (
+              <>
+                {/* 검색 필터 */}
+                <div style={{
+                  backgroundColor: '#f8f9fa',
+                  padding: 'clamp(12px, 3vw, 16px)',
+                  borderRadius: '8px',
+                  marginBottom: 'clamp(16px, 4vw, 20px)',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <h3 style={{
+                    margin: '0 0 16px 0',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)',
+                    fontWeight: '600',
+                    color: '#495057'
+                  }}>
+                    검색 필터
+                  </h3>
+
+                  {/* 교수명 검색 */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{
+                      display: 'block',
+                      marginBottom: '6px',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      fontWeight: '500',
+                      color: '#374151'
+                    }}>
+                      교수명으로 검색
+                    </label>
+                    <input
+                      type="text"
+                      value={searchFilters.professor_name}
+                      onChange={(e) => setSearchFilters(prev => ({
+                        ...prev,
+                        professor_name: e.target.value
+                      }))}
+                      placeholder="교수명을 입력하세요"
+                      style={{
+                        width: '100%',
+                        padding: 'clamp(10px, 2.5vw, 12px)',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: 'clamp(14px, 3.5vw, 16px)',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  {/* 날짜 범위 검색 */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{
+                      display: 'block',
+                      marginBottom: '6px',
+                      fontSize: 'clamp(12px, 3vw, 14px)',
+                      fontWeight: '500',
+                      color: '#374151'
+                    }}>
+                      촬영 기간으로 검색
+                    </label>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr auto 1fr',
+                      gap: '12px',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <input
+                          type="date"
+                          value={searchFilters.start_date}
+                          onChange={(e) => setSearchFilters(prev => ({
+                            ...prev,
+                            start_date: e.target.value
+                          }))}
+                          style={{
+                            width: '100%',
+                            padding: 'clamp(10px, 2.5vw, 12px)',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontSize: 'clamp(14px, 3.5vw, 16px)',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
+
+                      <span style={{
+                        color: '#6b7280',
+                        fontSize: 'clamp(14px, 3.5vw, 16px)',
+                        fontWeight: '500'
+                      }}>
+                        ~
+                      </span>
+
+                      <div>
+                        <input
+                          type="date"
+                          value={searchFilters.end_date}
+                          onChange={(e) => setSearchFilters(prev => ({
+                            ...prev,
+                            end_date: e.target.value
+                          }))}
+                          style={{
+                            width: '100%',
+                            padding: 'clamp(10px, 2.5vw, 12px)',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontSize: 'clamp(14px, 3.5vw, 16px)',
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                      </div>
                     </div>
+                  </div>
+
+                  {/* 검색 버튼들 */}
+                  <div style={{
+                    display: 'flex',
+                    gap: '8px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <button
+                      onClick={handleSearch}
+                      disabled={isSearching}
+                      style={{
+                        padding: 'clamp(10px, 2.5vw, 12px) clamp(16px, 4vw, 20px)',
+                        backgroundColor: isSearching ? '#9ca3af' : '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: isSearching ? 'not-allowed' : 'pointer',
+                        fontSize: 'clamp(12px, 3vw, 14px)',
+                        fontWeight: '500'
+                      }}
+                    >
+                      {isSearching ? '검색 중...' : '검색'}
+                    </button>
+
+                    <button
+                      onClick={handleResetSearch}
+                      style={{
+                        padding: 'clamp(10px, 2.5vw, 12px) clamp(16px, 4vw, 20px)',
+                        backgroundColor: '#6b7280',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: 'clamp(12px, 3vw, 14px)',
+                        fontWeight: '500'
+                      }}
+                    >
+                      초기화
+                    </button>
                   </div>
                 </div>
 
-                {/* 검색 버튼들 */}
-                <div style={{ 
-                  display: 'flex', 
-                  gap: '8px',
-                  flexWrap: 'wrap'
+                {/* 스케줄 개수 표시 */}
+                <div style={{
+                  fontSize: 'clamp(12px, 3vw, 14px)',
+                  color: '#6b7280',
+                  marginBottom: '16px'
                 }}>
-                  <button
-                    onClick={handleSearch}
-                    disabled={isSearching}
-                    style={{
-                      padding: 'clamp(10px, 2.5vw, 12px) clamp(16px, 4vw, 20px)',
-                      backgroundColor: isSearching ? '#9ca3af' : '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: isSearching ? 'not-allowed' : 'pointer',
-                      fontSize: 'clamp(12px, 3vw, 14px)',
-                      fontWeight: '500'
-                    }}
-                  >
-                    {isSearching ? '검색 중...' : '검색'}
-                  </button>
-                  
-                  <button
-                    onClick={handleResetSearch}
-                    style={{
-                      padding: 'clamp(10px, 2.5vw, 12px) clamp(16px, 4vw, 20px)',
-                      backgroundColor: '#6b7280',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: 'clamp(12px, 3vw, 14px)',
-                      fontWeight: '500'
-                    }}
-                  >
-                    초기화
-                  </button>
+                  총 {totalScheduleCount}개의 스케줄
                 </div>
-              </div>
 
-              {/* 스케줄 개수 표시 */}
-              <div style={{ 
-                fontSize: 'clamp(12px, 3vw, 14px)',
-                color: '#6b7280',
-                marginBottom: '16px'
-              }}>
-                총 {totalScheduleCount}개의 스케줄
-              </div>
+                {/* 스케줄 목록 */}
+                {allSchedules.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: 'clamp(40px, 10vw, 60px)',
+                    color: '#9ca3af',
+                    fontSize: 'clamp(14px, 3.5vw, 16px)'
+                  }}>
+                    등록된 스케줄이 없습니다
+                  </div>
+                ) : (
+                  <>
+                    {allSchedules.map((schedule) => {
+                      const isPast = isPastSchedule(schedule.shoot_date);
+                      const isCancelled = isCancelledSchedule(schedule);
+                      const canEdit = canEditSchedule(schedule);
+                      const statusInfo = getStatusInfo(schedule.approval_status, schedule.is_active);
 
-              {/* 스케줄 목록 */}
-              {allSchedules.length === 0 ? (
-                <div style={{ 
-                  textAlign: 'center',
-                  padding: 'clamp(40px, 10vw, 60px)',
-                  color: '#9ca3af',
-                  fontSize: 'clamp(14px, 3.5vw, 16px)'
-                }}>
-                  등록된 스케줄이 없습니다
-                </div>
-              ) : (
-                <>
-                  {allSchedules.map((schedule) => {
-                    const isPast = isPastSchedule(schedule.shoot_date);
-                    const isCancelled = isCancelledSchedule(schedule);
-                    const canEdit = canEditSchedule(schedule);
-                    const statusInfo = getStatusInfo(schedule.approval_status, schedule.is_active);
-                    
-                    return (
-                      <div
-                        key={schedule.id}
-                        style={{
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                          padding: 'clamp(12px, 3vw, 16px)',
-                          marginBottom: '12px',
-                          backgroundColor: isPast || isCancelled ? '#f9fafb' : 'white',
-                          opacity: isPast || isCancelled ? 0.7 : 1,
-                          position: 'relative'
-                        }}
-                      >
-                        
-                        {/* 상태 배지만 유지 */}
-                        <div style={{
-                          position: 'absolute',
-                          top: '12px',
-                          right: '12px',
-                          backgroundColor: statusInfo.bg,
-                          color: statusInfo.color,
-                          padding: '4px 8px',
-                          borderRadius: '12px',
-                          fontSize: '12px',
-                          fontWeight: '500'
-                        }}>
-                          {statusInfo.text}
-                        </div>
+                      return (
+                        <div
+                          key={schedule.id}
+                          style={{
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            padding: 'clamp(12px, 3vw, 16px)',
+                            marginBottom: '12px',
+                            backgroundColor: isPast || isCancelled ? '#f9fafb' : 'white',
+                            opacity: isPast || isCancelled ? 0.7 : 1,
+                            position: 'relative'
+                          }}
+                        >
 
-                        {/* 스케줄 정보 */}
-                        <div style={{ marginBottom: '12px', paddingRight: '80px' }}>
-                          <h3 style={{
-                            margin: '0 0 4px 0',
-                            fontSize: 'clamp(14px, 3.5vw, 16px)',
-                            fontWeight: '600',
-                            color: '#1f2937'
+                          {/* 상태 배지만 유지 */}
+                          <div style={{
+                            position: 'absolute',
+                            top: '12px',
+                            right: '12px',
+                            backgroundColor: statusInfo.bg,
+                            color: statusInfo.color,
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            fontSize: '12px',
+                            fontWeight: '500'
                           }}>
-                            {schedule.professor_name}
-                          </h3>
-                          <p style={{
-                            margin: '0',
-                            fontSize: 'clamp(12px, 3vw, 14px)',
-                            color: '#6b7280'
-                          }}>
-                            {schedule.course_name || '과정명 없음'}
-                          </p>
-                        </div>
-
-                        {/* 스케줄 세부 정보 */}
-                        <div style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                          gap: '8px',
-                          fontSize: 'clamp(11px, 2.5vw, 12px)',
-                          color: '#4b5563',
-                          marginBottom: '12px'
-                        }}>
-                          <div>날짜: {schedule.shoot_date}</div>
-                          <div>촬영형식: {schedule.shooting_type}</div>
-                          <div>스튜디오: {schedule.sub_locations?.name || '스튜디오'}</div>
-                        </div>
-
-                        {/* 개선된 촬영 일정 표시 */}
-                        <div style={{
-                          fontSize: 'clamp(11px, 2.5vw, 12px)',
-                          color: '#4b5563',
-                          marginBottom: '12px',
-                          padding: '8px',
-                          backgroundColor: schedule.is_grouped ? '#f0f9ff' : '#f8fafc',
-                          borderRadius: '4px',
-                          border: `1px solid ${schedule.is_grouped ? '#dbeafe' : '#e2e8f0'}`
-                        }}>
-                          <div style={{ fontWeight: '500', marginBottom: '4px', color: '#374151' }}>
-                            촬영 일정:
+                            {statusInfo.text}
                           </div>
-                          {schedule.is_grouped && schedule.grouped_schedules ? (
-                            <div>
-                              {/* 1차 촬영 */}
-                              <div style={{ marginBottom: '2px' }}>
-                                <span style={{ fontWeight: '500' }}>1차:</span> {schedule.grouped_schedules[0]?.start_time?.substring(0,5)} ~ {schedule.break_start_time?.substring(0,5)}
-                              </div>
-                              
-                              {/* 휴식시간 */}
-                              {schedule.break_time_enabled && schedule.break_start_time && schedule.break_end_time && (
-                                <div style={{ 
-                                  marginBottom: '2px',
-                                  color: '#7c3aed', 
-                                  fontWeight: '500' 
-                                }}>
-                                  휴식: {schedule.break_start_time?.substring(0,5)} ~ {schedule.break_end_time?.substring(0,5)}
-                                </div>
-                              )}
-                              
-                              {/* 2차 촬영 */}
-                              {schedule.grouped_schedules[1] && (
-                                <div style={{ marginBottom: '2px' }}>
-                                  <span style={{ fontWeight: '500' }}>2차:</span> {schedule.break_end_time?.substring(0,5)} ~ {schedule.grouped_schedules[1]?.end_time?.substring(0,5)}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div>
-                              <span style={{ fontWeight: '500' }}>시간:</span> {schedule.start_time?.substring(0,5)} ~ {schedule.end_time?.substring(0,5)}
-                            </div>
-                          )}
-                        </div>
 
-                        {/* 비고 */}
-                        {schedule.notes && (
+                          {/* 스케줄 정보 */}
+                          <div style={{ marginBottom: '12px', paddingRight: '80px' }}>
+                            <h3 style={{
+                              margin: '0 0 4px 0',
+                              fontSize: 'clamp(14px, 3.5vw, 16px)',
+                              fontWeight: '600',
+                              color: '#1f2937'
+                            }}>
+                              {schedule.professor_name}
+                            </h3>
+                            <p style={{
+                              margin: '0',
+                              fontSize: 'clamp(12px, 3vw, 14px)',
+                              color: '#6b7280'
+                            }}>
+                              {schedule.course_name || '과정명 없음'}
+                            </p>
+                          </div>
+
+                          {/* 스케줄 세부 정보 */}
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                            gap: '8px',
+                            fontSize: 'clamp(11px, 2.5vw, 12px)',
+                            color: '#4b5563',
+                            marginBottom: '12px'
+                          }}>
+                            <div>날짜: {schedule.shoot_date}</div>
+                            <div>촬영형식: {schedule.shooting_type}</div>
+                            <div>스튜디오: {schedule.sub_locations?.name || '스튜디오'}</div>
+                          </div>
+
+                          {/* 개선된 촬영 일정 표시 */}
                           <div style={{
                             fontSize: 'clamp(11px, 2.5vw, 12px)',
-                            color: '#6b7280',
+                            color: '#4b5563',
                             marginBottom: '12px',
                             padding: '8px',
-                            backgroundColor: '#f3f4f6',
-                            borderRadius: '4px'
+                            backgroundColor: schedule.is_grouped ? '#f0f9ff' : '#f8fafc',
+                            borderRadius: '4px',
+                            border: `1px solid ${schedule.is_grouped ? '#dbeafe' : '#e2e8f0'}`
                           }}>
-                            비고: {schedule.notes}
+                            <div style={{ fontWeight: '500', marginBottom: '4px', color: '#374151' }}>
+                              촬영 일정:
+                            </div>
+                            {schedule.is_grouped && schedule.grouped_schedules ? (
+                              <div>
+                                {/* 1차 촬영 */}
+                                <div style={{ marginBottom: '2px' }}>
+                                  <span style={{ fontWeight: '500' }}>1차:</span> {schedule.grouped_schedules[0]?.start_time?.substring(0, 5)} ~ {schedule.break_start_time?.substring(0, 5)}
+                                </div>
+
+                                {/* 휴식시간 */}
+                                {schedule.break_time_enabled && schedule.break_start_time && schedule.break_end_time && (
+                                  <div style={{
+                                    marginBottom: '2px',
+                                    color: '#7c3aed',
+                                    fontWeight: '500'
+                                  }}>
+                                    휴식: {schedule.break_start_time?.substring(0, 5)} ~ {schedule.break_end_time?.substring(0, 5)}
+                                  </div>
+                                )}
+
+                                {/* 2차 촬영 */}
+                                {schedule.grouped_schedules[1] && (
+                                  <div style={{ marginBottom: '2px' }}>
+                                    <span style={{ fontWeight: '500' }}>2차:</span> {schedule.break_end_time?.substring(0, 5)} ~ {schedule.grouped_schedules[1]?.end_time?.substring(0, 5)}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div>
+                                <span style={{ fontWeight: '500' }}>시간:</span> {schedule.start_time?.substring(0, 5)} ~ {schedule.end_time?.substring(0, 5)}
+                              </div>
+                            )}
                           </div>
-                        )}
 
-                        {/* 상세보기/수정/취소 버튼 */}
-                        <div style={{
-                          display: 'flex',
-                          gap: '8px',
-                          justifyContent: 'flex-end',
-                          marginTop: '12px',
-                          paddingTop: '12px',
-                          borderTop: '1px solid #e5e7eb',
-                          flexWrap: 'wrap'
-                        }}>
-                          
-                          {/* 상세보기 버튼 */}
-                          <button
-                            onClick={() => {
-                              setDetailSchedule(schedule);
-                              setShowDetailModal(true);
-                            }}
-                            style={{
-                              padding: 'clamp(6px, 1.5vw, 8px) clamp(12px, 3vw, 16px)',
-                              backgroundColor: '#6b7280',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              fontSize: 'clamp(11px, 2.5vw, 12px)',
-                              fontWeight: '500'
-                            }}
-                          >
-                            상세보기
-                          </button>
-                          
-                          {/* 수정된 조건: modification_approved 포함하여 매니저 수정 가능 */}
-                          {(schedule.approval_status === 'approved' || 
-                            schedule.approval_status === 'confirmed' || 
-                            schedule.approval_status === 'modification_approved') && 
-                           !isPast && !isCancelled && (
-                            <>
-                              {/* 수정 버튼 */}
-                              <button
-                                onClick={() => handleEditSchedule(schedule)}
-                                style={{
-                                  padding: 'clamp(6px, 1.5vw, 8px) clamp(12px, 3vw, 16px)',
-                                  backgroundColor: '#059669',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: 'clamp(11px, 2.5vw, 12px)',
-                                  fontWeight: '500'
-                                }}
-                              >
-                                {schedule.approval_status === 'modification_approved' ? '수정하기' : '수정 요청'}
-                              </button>
-                              
-                              {/* 취소 버튼 */}
-                              <button
-                                onClick={() => handleCancelSchedule(schedule)}
-                                style={{
-                                  padding: 'clamp(6px, 1.5vw, 8px) clamp(12px, 3vw, 16px)',
-                                  backgroundColor: '#dc2626',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: 'clamp(11px, 2.5vw, 12px)',
-                                  fontWeight: '500'
-                                }}
-                              >
-                                취소
-                              </button>
-                            </>
-                          )}
-
-                          {/* 승인 대기/요청 중 상태 표시 */}
-                          {(schedule.approval_status === 'pending' || 
-                            schedule.approval_status === 'modification_requested' || 
-                            schedule.approval_status === 'cancellation_requested') && (
+                          {/* 비고 */}
+                          {schedule.notes && (
                             <div style={{
-                              fontSize: 'clamp(10px, 2.5vw, 11px)',
-                              color: '#7c3aed',
-                              fontStyle: 'italic',
-                              padding: '4px 8px',
+                              fontSize: 'clamp(11px, 2.5vw, 12px)',
+                              color: '#6b7280',
+                              marginBottom: '12px',
+                              padding: '8px',
                               backgroundColor: '#f3f4f6',
-                              borderRadius: '12px',
-                              border: '1px solid #e5e7eb',
-                              display: 'flex',
-                              alignItems: 'center'
+                              borderRadius: '4px'
                             }}>
-                              {schedule.approval_status === 'modification_requested' && '수정 승인 대기중'}
-                              {schedule.approval_status === 'pending' && '승인 대기중'}
-                              {schedule.approval_status === 'cancellation_requested' && '취소 승인 대기중'}
+                              비고: {schedule.notes}
                             </div>
                           )}
 
-                        </div>
-                      </div>
-                    );
-                  })}
+                          {/* 상세보기/수정/취소 버튼 */}
+                          <div style={{
+                            display: 'flex',
+                            gap: '8px',
+                            justifyContent: 'flex-end',
+                            marginTop: '12px',
+                            paddingTop: '12px',
+                            borderTop: '1px solid #e5e7eb',
+                            flexWrap: 'wrap'
+                          }}>
 
-                  {/* 더 보기 버튼 */}
-                  {hasMore && (
-                    <div style={{ textAlign: 'center', marginTop: '20px' }}>
-                      <button
-                        onClick={handleLoadMore}
-                        style={{
-                          padding: 'clamp(10px, 2.5vw, 12px) clamp(16px, 4vw, 20px)',
-                          backgroundColor: '#6b7280',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: 'clamp(12px, 3vw, 14px)',
-                          fontWeight: '500'
-                        }}
-                      >
-                        더 보기
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
+                            {/* 상세보기 버튼 */}
+                            <button
+                              onClick={() => {
+                                setDetailSchedule(schedule);
+                                setShowDetailModal(true);
+                              }}
+                              style={{
+                                padding: 'clamp(6px, 1.5vw, 8px) clamp(12px, 3vw, 16px)',
+                                backgroundColor: '#6b7280',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: 'clamp(11px, 2.5vw, 12px)',
+                                fontWeight: '500'
+                              }}
+                            >
+                              상세보기
+                            </button>
+
+                            {/* 수정된 조건: modification_approved 포함하여 매니저 수정 가능 */}
+                            {(schedule.approval_status === 'approved' ||
+                              schedule.approval_status === 'confirmed' ||
+                              schedule.approval_status === 'modification_approved') &&
+                              !isPast && !isCancelled && (
+                                <>
+                                  {/* 수정 버튼 */}
+                                  <button
+                                    onClick={() => handleEditSchedule(schedule)}
+                                    style={{
+                                      padding: 'clamp(6px, 1.5vw, 8px) clamp(12px, 3vw, 16px)',
+                                      backgroundColor: '#059669',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      fontSize: 'clamp(11px, 2.5vw, 12px)',
+                                      fontWeight: '500'
+                                    }}
+                                  >
+                                    {schedule.approval_status === 'modification_approved' ? '수정하기' : '수정 요청'}
+                                  </button>
+
+                                  {/* 취소 버튼 */}
+                                  <button
+                                    onClick={() => handleCancelSchedule(schedule)}
+                                    style={{
+                                      padding: 'clamp(6px, 1.5vw, 8px) clamp(12px, 3vw, 16px)',
+                                      backgroundColor: '#dc2626',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      fontSize: 'clamp(11px, 2.5vw, 12px)',
+                                      fontWeight: '500'
+                                    }}
+                                  >
+                                    취소
+                                  </button>
+                                </>
+                              )}
+
+                            {/* 승인 대기/요청 중 상태 표시 */}
+                            {(schedule.approval_status === 'pending' ||
+                              schedule.approval_status === 'modification_requested' ||
+                              schedule.approval_status === 'cancellation_requested') && (
+                                <div style={{
+                                  fontSize: 'clamp(10px, 2.5vw, 11px)',
+                                  color: '#7c3aed',
+                                  fontStyle: 'italic',
+                                  padding: '4px 8px',
+                                  backgroundColor: '#f3f4f6',
+                                  borderRadius: '12px',
+                                  border: '1px solid #e5e7eb',
+                                  display: 'flex',
+                                  alignItems: 'center'
+                                }}>
+                                  {schedule.approval_status === 'modification_requested' && '수정 승인 대기중'}
+                                  {schedule.approval_status === 'pending' && '승인 대기중'}
+                                  {schedule.approval_status === 'cancellation_requested' && '취소 승인 대기중'}
+                                </div>
+                              )}
+
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* 더 보기 버튼 */}
+                    {hasMore && (
+                      <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                        <button
+                          onClick={handleLoadMore}
+                          style={{
+                            padding: 'clamp(10px, 2.5vw, 12px) clamp(16px, 4vw, 20px)',
+                            backgroundColor: '#6b7280',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: 'clamp(12px, 3vw, 14px)',
+                            fontWeight: '500'
+                          }}
+                        >
+                          더 보기
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+  }
