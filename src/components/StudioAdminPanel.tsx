@@ -11,6 +11,20 @@ import StudioScheduleModal from "./modals/StudioScheduleModal";
 import { UnifiedScheduleCard } from "../components/cards/UnifiedScheduleCard";
 import { ScheduleCardErrorBoundary } from "./ErrorBoundary";
 
+// 파일 맨 위, import 다음에 추가
+const getUserNumericId = (): number => {
+  const numericId = localStorage.getItem('userNumericId');
+  const parsed = parseInt(numericId || '0', 10);
+  
+  if (isNaN(parsed) || parsed === 0) {
+    console.warn('⚠️ userNumericId가 없습니다. 재로그인 필요');
+    return 0;
+  }
+  
+  return parsed;
+};
+
+
 interface StudioAdminPanelProps {
   currentUserRole?: UserRoleType;
 }
@@ -680,15 +694,14 @@ const handleCellClick = (date: string, location: any) => {
 
     // 🔥 히스토리 기록
     // ✅ 더욱 안전한 버전
-    const userId = localStorage.getItem('userId');
-    const currentUserId = userId ? parseInt(userId) : null;
+    const getUserNumericId = () => parseInt(localStorage.getItem('userNumericId') || '0', 10);
 
     await supabase
       .from('schedule_history')
       .insert({
         schedule_id: modalData.scheduleData.id,
         change_type: 'cancelled',
-        changed_by: currentUserId,  // 🔥 null 허용하는 정수
+        changed_by: getUserNumericId(),  // 🔥 null 허용하는 정수
         description: `관리자 취소 승인 (승인자: ${adminName})`,
         old_value: JSON.stringify({ approval_status: modalData.scheduleData.approval_status }),
         new_value: JSON.stringify({ approval_status: 'cancelled' }),
@@ -719,8 +732,8 @@ const handleCellClick = (date: string, location: any) => {
       .insert({
         schedule_id: modalData.scheduleData.id,
         change_type: updateData.approval_status,
-        changed_by: adminName,
-        description: `스케줄 수정 (수정자: ${adminName})`,
+        changed_by: getUserNumericId(),  // ✅ 반드시 숫자 (예: 2, 4, ...)
+        description: `수정자: ${adminName}`, // 이름은 설명에!
         old_value: JSON.stringify(modalData.scheduleData),
         new_value: JSON.stringify(updateData),
         created_at: new Date().toISOString(),
@@ -755,7 +768,7 @@ const handleCellClick = (date: string, location: any) => {
       .insert({
         schedule_id: insertResult[0].id,
         change_type: 'created',
-        changed_by: parseInt(localStorage.getItem('userId') || '0'),  // 🔥 정수로 변경!
+        changed_by: getUserNumericId(),
         description: `스케줄 신규 등록 (등록자: ${getCurrentUserInfo()})`,
         new_value: JSON.stringify(newScheduleData),
         created_at: new Date().toISOString(),
@@ -967,7 +980,7 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
       .insert({
         schedule_id: scheduleId,
         change_type: 'split',
-        changed_by: parseInt(localStorage.getItem('userId') || '0'),
+        changed_by: getUserNumericId(),
         description: `스케줄 ${segments.length}개로 분할 (사유: ${reason})`,
         old_value: JSON.stringify({ 
           start_time: originalSchedule.start_time, 
