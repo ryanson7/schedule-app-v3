@@ -8,7 +8,7 @@ import AcademyScheduleModal from "./modals/AcademyScheduleModal";
 import { useWeek } from "../contexts/WeekContext";
 import { UnifiedScheduleCard } from "./cards/UnifiedScheduleCard";
 import { ScheduleCardErrorBoundary } from "./ErrorBoundary";
-import { sendMessage } from '@/utils/naverWorksMessage';
+import { sendMessage } from '../utils/naverWorksMessage';
 
 
 const getUserNumericId = (): number => {

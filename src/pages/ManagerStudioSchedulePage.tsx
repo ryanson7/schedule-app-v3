@@ -2294,6 +2294,7 @@ export default function ManagerStudioSchedulePage() {
   };
 
   // 승인 요청 처리 함수 - 수정됨 (존재하지 않는 필드 제거)
+const handleApprovalRequest = async (reason: string) => {// 승인 요청 처리 함수 - 수정됨
 const handleApprovalRequest = async (reason: string) => {
   if (!approvalSchedule) return;
 
@@ -2303,7 +2304,7 @@ const handleApprovalRequest = async (reason: string) => {
       cancel: 'cancellation_requested'
     };
 
-    // 그룹 스케줄 처리 (기존 로직)
+    // 그룹 스케줄 처리
     let scheduleIds = [approvalSchedule.id];
     
     if (approvalSchedule.schedule_group_id) {
@@ -2329,28 +2330,21 @@ const handleApprovalRequest = async (reason: string) => {
 
     if (error) throw error;
 
-    // 메시지 생성 및 전송
-    const message = generateAdminMessage(
-      approvalRequestType,           // 정의된 변수 사용
-      approvalSchedule,              // 정의된 변수 사용
-      managerInfo?.name || '매니저', // 정의된 변수 사용
-      reason                         // 파라미터 사용
+    // ✅ 메시지 생성 및 발송
+    const message = await generateNotificationMessage(
+      approvalRequestType === 'edit' ? 'modification_request' : 'cancellation_request',
+      approvalSchedule.id,
+      reason
     );
-    
-    console.log('🔧 승인요청 메시지:', message);
 
-    if (!message) {
-      console.error('❌ 메시지 생성 실패');
-      alert('메시지 생성 실패');
-      return;
-    }
-
-    // 메시지 발송
-    sendMessage(messageText, 'channel', []);
-
-      console.log('✅ 승인요청 메시지 발송 성공');
-    } catch (messageError) {
-      console.log('❌ 승인요청 메시지 발송 실패:', messageError);
+    if (message) {
+      try {
+        console.log('📨 메시지 발송 시작');
+        sendMessage(message, 'channel', []);  // ✅ messageText → message
+        console.log('✅ 승인요청 메시지 발송 성공');
+      } catch (messageError) {
+        console.error('❌ 승인요청 메시지 발송 실패:', messageError);
+      }
     }
 
     alert(`${approvalRequestType === 'edit' ? '수정' : '취소'} 요청이 완료되었습니다.`);
@@ -2366,6 +2360,7 @@ const handleApprovalRequest = async (reason: string) => {
   setShowApprovalModal(false);
   setApprovalSchedule(null);
 };
+
 
 
 
@@ -2590,7 +2585,7 @@ const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
     if (message) {
       try {
     // 메시지 발송
-    sendMessage(messageText, 'channel', []);
+    sendMessage(message, 'channel', []);
 
         console.log('✅ 재승인 메시지 발송 성공');
       } catch (messageError) {
@@ -3163,7 +3158,7 @@ const checkScheduleConflictAndRecommend = async (
 
       try {
       // 메시지 발송
-      sendMessage(messageText, 'channel', []);
+      sendMessage(message, 'channel', []);
 
       } catch (err) {
         console.log('메시지 발송 실패:', err);
