@@ -1,5 +1,3 @@
-export const config = { runtime: 'edge' };
-
 import { NextApiRequest, NextApiResponse } from 'next';
 
 const KAKAOWORK_API_URL = process.env.KAKAOWORK_API_URL || 'https://api.kakaowork.com';
