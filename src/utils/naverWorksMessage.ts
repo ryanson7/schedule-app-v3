@@ -1,4 +1,10 @@
-// utils/naverWorksMessage.ts (백그라운드 처리 버전)
+// src/utils/naverWorksMessage.ts (Supabase Function 버전)
+
+// ✅ Supabase Function URL
+const SUPABASE_FUNCTION_URL = 'https://lzzcvsomfixlgpfukega.supabase.co/functions/v1/send-naver-message';
+
+// ✅ Supabase Anon Key (.env.local에서 확인)
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6emN2c29tZml4bGdwZnVrZWdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyNDg3MTMsImV4cCI6MjA2NjgyNDcxM30.9QWBFFJ4RXi1_-3kWwcH2ch8JwFzO2aOYXEqqLEWynk';
 
 // ✅ 1. 승인 요청 메시지
 export const sendApprovalRequest = (schedule: any, requestType: 'edit' | 'cancel'): void => {
@@ -12,15 +18,15 @@ export const sendApprovalRequest = (schedule: any, requestType: 'edit' | 'cancel
 
 관리자 페이지에서 승인 처리해주세요.`;
 
-  console.log('📨 메시지 발송 시작 (백그라운드)');
+  console.log('📨 메시지 발송 시작 (Supabase)');
 
-  fetch('/api/message', {
+  fetch(SUPABASE_FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'approval_request',
-      message: messageText
-    })
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify({ message: messageText })
   })
     .then(res => res.json())
     .then(result => {
@@ -45,15 +51,15 @@ export const sendApprovalComplete = (schedule: any, managerUserId: string, appro
 
 ${approved ? '요청하신 작업을 진행하실 수 있습니다.' : '요청이 거부되었습니다. 문의사항이 있으시면 연락주세요.'}`;
 
-  console.log('📨 메시지 발송 시작 (백그라운드)');
+  console.log('📨 메시지 발송 시작 (Supabase)');
 
-  fetch('/api/message', {
+  fetch(SUPABASE_FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'approval_complete',
-      message: messageText
-    })
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify({ message: messageText })
   })
     .then(res => res.json())
     .then(result => {
@@ -100,15 +106,15 @@ export const sendScheduleNotice = (noticeType: 'start' | 'end' | 'reminder'): vo
       break;
   }
 
-  console.log('📨 메시지 발송 시작 (백그라운드)');
+  console.log('📨 메시지 발송 시작 (Supabase)');
 
-  fetch('/api/message', {
+  fetch(SUPABASE_FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: 'schedule_notice',
-      message: messageText
-    })
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify({ message: messageText })
   })
     .then(res => res.json())
     .then(result => {
@@ -125,15 +131,15 @@ export const sendScheduleNotice = (noticeType: 'start' | 'end' | 'reminder'): vo
 
 // ✅ 4. 일반 메시지 발송
 export const sendMessage = (messageText: string, targetType: 'users' | 'channel', targets: string[]): void => {
-  console.log('📨 메시지 발송 시작 (백그라운드)');
+  console.log('📨 메시지 발송 시작 (Supabase)');
 
-  fetch('/api/message', {
+  fetch(SUPABASE_FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      type: targetType === 'users' ? 'approval_complete' : 'schedule_notice',
-      message: messageText
-    })
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify({ message: messageText })
   })
     .then(res => res.json())
     .then(result => {
