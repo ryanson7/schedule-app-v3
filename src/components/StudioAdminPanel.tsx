@@ -778,74 +778,140 @@ const handleCellClick = (date: string, location: any) => {
     console.log('✅ 스튜디오 신규 등록 완료:', insertResult);
   };
 
-  // 🔥 일반 스케줄 작업 처리 함수
-  const handleScheduleOperation = async (data: any, action: string, adminName: string) => {
-    // 필수 필드 검증
-    const requiredFields = {
-      shoot_date: '촬영 날짜',
-      start_time: '시작 시간',
-      end_time: '종료 시간',
-      professor_name: '교수명',
-      sub_location_id: '스튜디오'
-    };
-    
-    const missingFields = [];
-    for (const [field, label] of Object.entries(requiredFields)) {
-      if (!data[field] || data[field].toString().trim() === '') {
-        missingFields.push(label);
-      }
-    }
-    
-    if (missingFields.length > 0) {
-      throw new Error(`다음 필수 필드를 입력해주세요: ${missingFields.join(', ')}`);
-    }
-    
-    if (data.start_time >= data.end_time) {
-      throw new Error('종료 시간은 시작 시간보다 늦어야 합니다.');
-    }
-
-    // 호환성 검사
-    if (data.shooting_type && data.sub_location_id) {
-      if (!isStudioCompatible(parseInt(data.sub_location_id), data.shooting_type)) {
-        const studioName = studioLocations.find(s => s.id === parseInt(data.sub_location_id))?.name;
-        const compatibleStudios = studioLocations.filter(studio => 
-          isStudioCompatible(studio.id, data.shooting_type)
-        );
-        const compatibleNames = compatibleStudios.map(s => `${s.name}번`).join(', ');
-        
-        throw new Error(`호환성 오류: "${data.shooting_type}" 촬영형식은 ${studioName}번 스튜디오에서 지원되지 않습니다.\n\n지원 가능한 스튜디오: ${compatibleNames}`);
-      }
-    }
-
-    // 공통 데이터 구성
-    const commonData = {
-      shoot_date: data.shoot_date,
-      start_time: data.start_time,
-      end_time: data.end_time,
-      professor_name: data.professor_name,
-      course_name: data.course_name || '',
-      course_code: data.course_code || '',
-      shooting_type: data.shooting_type || 'PPT',
-      notes: data.notes || '',
-      sub_location_id: parseInt(data.sub_location_id),
-      approval_status: getApprovalStatus(action),
-      approved_at: action === 'approve' ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString()
-    };
-
-    // 수정 vs 신규 등록
-    if (modalData?.mode === 'edit' && modalData?.scheduleData) {
-      await updateSchedule(commonData, adminName);
-      const message = action === 'approve' ? '수정 및 승인 완료되었습니다.' : '수정 완료되었습니다.';
-      await fetchSchedules();
-      return { success: true, message };
-    } else {
-      await createSchedule(commonData, adminName);
-      const message = action === 'approve' ? '등록 및 승인 완료되었습니다.' : '등록 완료되었습니다.';
-      await fetchSchedules();
-      return { success: true, message };
-    }
+// 🔥 일반 스케줄 작업 처리 함수
+const handleScheduleOperation = async (data: any, action: string, adminName: string) => {
+  // 필수 필드 검증
+  const requiredFields = {
+    shoot_date: '촬영 날짜',
+    start_time: '시작 시간',
+    end_time: '종료 시간',
+    professor_name: '교수명',
+    sub_location_id: '스튜디오'
   };
+  
+  const missingFields = [];
+  for (const [field, label] of Object.entries(requiredFields)) {
+    if (!data[field] || data[field].toString().trim() === '') {
+      missingFields.push(label);
+    }
+  }
+  
+  if (missingFields.length > 0) {
+    throw new Error(`다음 필수 필드를 입력해주세요: ${missingFields.join(', ')}`);
+  }
+  
+  if (data.start_time >= data.end_time) {
+    throw new Error('종료 시간은 시작 시간보다 늦어야 합니다.');
+  }
+
+  // 호환성 검사
+  if (data.shooting_type && data.sub_location_id) {
+    if (!isStudioCompatible(parseInt(data.sub_location_id), data.shooting_type)) {
+      const studioName = studioLocations.find(s => s.id === parseInt(data.sub_location_id))?.name;
+      const compatibleStudios = studioLocations.filter(studio => 
+        isStudioCompatible(studio.id, data.shooting_type)
+      );
+      const compatibleNames = compatibleStudios.map(s => `${s.name}번`).join(', ');
+      
+      throw new Error(`호환성 오류: "${data.shooting_type}" 촬영형식은 ${studioName}번 스튜디오에서 지원되지 않습니다.\n\n지원 가능한 스튜디오: ${compatibleNames}`);
+    }
+  }
+
+  // 공통 데이터 구성
+  const commonData = {
+    shoot_date: data.shoot_date,
+    start_time: data.start_time,
+    end_time: data.end_time,
+    professor_name: data.professor_name,
+    course_name: data.course_name || '',
+    course_code: data.course_code || '',
+    shooting_type: data.shooting_type || 'PPT',
+    notes: data.notes || '',
+    sub_location_id: parseInt(data.sub_location_id),
+    approval_status: getApprovalStatus(action),
+    approved_at: action === 'approve' ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString()
+  };
+
+  // 수정 vs 신규 등록
+  if (modalData?.mode === 'edit' && modalData?.scheduleData) {
+    await updateSchedule(commonData, adminName);
+    
+    // 🔥 승인 시 메시지 전송
+    if (action === 'approve') {
+      console.log('📨 승인 메시지 전송 시작');
+      
+      const studioName = studioLocations.find(s => s.id === parseInt(data.sub_location_id))?.name || '알 수 없음';
+      
+      const message = `[촬영 일정 승인완료]
+교수명: ${data.professor_name}
+촬영일: ${data.shoot_date}
+시간: ${data.start_time?.substring(0,5)} ~ ${data.end_time?.substring(0,5)}
+스튜디오: ${studioName}번
+과정명: ${data.course_name || '없음'}`;
+
+      try {
+        const response = await fetch('/api/message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: message }),
+        });
+
+        if (response.ok) {
+          console.log('✅ 승인 메시지 전송 성공');
+        } else {
+          console.warn('⚠️ 메시지 전송 실패:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ 메시지 전송 에러:', error);
+      }
+    }
+    
+    const messageText = action === 'approve' ? '수정 및 승인 완료되었습니다.' : '수정 완료되었습니다.';
+    await fetchSchedules();
+    return { success: true, message: messageText };
+  } else {
+    await createSchedule(commonData, adminName);
+    
+    // 🔥 신규 등록 시에도 승인이면 메시지 전송
+    if (action === 'approve') {
+      console.log('📨 신규 등록 승인 메시지 전송 시작');
+      
+      const studioName = studioLocations.find(s => s.id === parseInt(data.sub_location_id))?.name || '알 수 없음';
+      
+      const message = `[촬영 일정 등록 및 승인완료]
+교수명: ${data.professor_name}
+촬영일: ${data.shoot_date}
+시간: ${data.start_time?.substring(0,5)} ~ ${data.end_time?.substring(0,5)}
+스튜디오: ${studioName}번
+과정명: ${data.course_name || '없음'}`;
+
+      try {
+        const response = await fetch('/api/message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: message }),
+        });
+
+        if (response.ok) {
+          console.log('✅ 신규 등록 승인 메시지 전송 성공');
+        } else {
+          console.warn('⚠️ 메시지 전송 실패:', response.status);
+        }
+      } catch (error) {
+        console.error('❌ 메시지 전송 에러:', error);
+      }
+    }
+    
+    const messageText = action === 'approve' ? '등록 및 승인 완료되었습니다.' : '등록 완료되었습니다.';
+    await fetchSchedules();
+    return { success: true, message: messageText };
+  }
+};
 
   // 🔥 통합된 handleSave 함수
   const handleSave = async (data: any, action: 'temp' | 'request' | 'approve' | 'cancel_approve') => {

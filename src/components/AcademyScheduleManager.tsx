@@ -8,20 +8,6 @@ import AcademyScheduleModal from "./modals/AcademyScheduleModal";
 import { useWeek } from "../contexts/WeekContext";
 import { UnifiedScheduleCard } from "./cards/UnifiedScheduleCard";
 import { ScheduleCardErrorBoundary } from "./ErrorBoundary";
-import { sendMessage } from '../utils/naverWorksMessage';
-
-
-const getUserNumericId = (): number => {
-  const numericId = localStorage.getItem('userNumericId');
-  const parsed = parseInt(numericId || '0', 10);
-  
-  if (isNaN(parsed) || parsed === 0) {
-    console.warn('⚠️ userNumericId가 없습니다. 재로그인 필요');
-    return 0;
-  }
-  
-  return parsed;
-};
 
 // 🔥 기존 학원별 색상 정의 완전 유지
 const academyColors = {
@@ -835,9 +821,14 @@ const sendScheduleNotification = async (
         scheduleId
       });
 
-        // 메시지 발송
-        sendMessage(messageText, 'channel', []);
-
+      const response = await fetch('/api/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: messageType,
+          message: messageText
+        })
+      });
 
       // 📥 응답 상세 로그
       console.log('📥 응답 상태:', response.status);
@@ -1527,7 +1518,6 @@ const recordScheduleHistory = async (
         newDate.setDate(originalDate.getDate() + 7);
         const newDateStr = newDate.toISOString().split('T')[0];
         
-        // ✅ executeCopySchedules 함수 내부
         const newSchedule = {
           shoot_date: newDateStr,
           start_time: schedule.start_time,
@@ -1542,11 +1532,10 @@ const recordScheduleHistory = async (
           approval_status: 'pending',
           team_id: schedule.team_id || 1,
           is_active: true,
-          requested_by: getUserNumericId(),  // ✅ 수정!
+          requested_by: parseInt(localStorage.getItem('userId') || '16'),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-
         
         newSchedules.push(newSchedule);
       }

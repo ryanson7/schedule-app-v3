@@ -3,8 +3,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../utils/supabaseClient';
 import { SchedulePolicy } from '../../utils/schedulePolicy';
 import { ProfessorAutocomplete } from '../ProfessorAutocomplete';
-import { sendMessage } from '../../utils/naverWorksMessage';
-
 
 const getUserNumericId = (): number => {
   const numericId = localStorage.getItem('userNumericId');
@@ -1617,10 +1615,15 @@ const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], re
       if (error) throw error;
 
     const messageText = `[수정 권한 승인]\\n\\n교수명: ${formData.professor_name}\\n촬영일: ${initialData.scheduleData.shoot_date}\\n처리 결과: 수정 승인됨\\n처리자: ${adminName}\\n\\n이제 스케줄을 수정할 수 있습니다.`;
-    
-      // 메시지 발송
-      sendMessage(messageText, 'channel', []);
 
+        await fetch('/api/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'approval_complete',
+            message: messageText
+          })
+        });
         
         alert('수정 권한이 승인되었습니다. 이제 수정할 수 있습니다.');
         onClose();
@@ -1820,9 +1823,14 @@ if (action === 'cancel_approve') {
               if (action === 'approve') {
                 const messageText = `[스케줄 수정 완료]\\n\\n교수명: ${formData.professor_name}\\n촬영일: ${formData.shoot_date}\\n시간: ${formData.start_time}~${formData.end_time}\\n처리자: ${currentUser}\\n\\n스케줄이 최종 수정되었습니다.`;
                 
-              // 메시지 발송
-              sendMessage(messageText, 'channel', []);
-
+                await fetch('/api/message', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    type: 'schedule_modified',
+                    message: messageText
+                  })
+                });
                }
               
             console.log('히스토리 기록 성공:', historyResult);
