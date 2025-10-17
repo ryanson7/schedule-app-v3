@@ -3,7 +3,7 @@
 // ✅ Supabase Function URL
 const SUPABASE_FUNCTION_URL = 'https://lzzcvsomfixlgpfukega.supabase.co/functions/v1/send-naver-message';
 
-// ✅ Supabase Anon Key (.env.local에서 확인)
+// ✅ Supabase Anon Key
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx6emN2c29tZml4bGdwZnVrZWdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyNDg3MTMsImV4cCI6MjA2NjgyNDcxM30.9QWBFFJ4RXi1_-3kWwcH2ch8JwFzO2aOYXEqqLEWynk';
 
 // ✅ 1. 승인 요청 메시지
