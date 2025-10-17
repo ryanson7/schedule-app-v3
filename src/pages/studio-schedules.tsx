@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
 import { SchedulePolicy } from "../utils/schedulePolicy";
 import { useAuth } from '../contexts/AuthContext';
+import { sendMessage } from '../utils/naverWorksMessage';
+
 
 // 30분 단위 시간 옵션 생성
 const generateTimeOptions = () => {
@@ -178,14 +180,9 @@ const sendNaverWorksMessage = async (messageType: 'register' | 'modify' | 'cance
     }
 
     try {
-      await fetch('/api/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'professor_schedule',
-          message: message
-        })
-      });
+    // 메시지 발송
+    sendMessage(messageText, 'channel', []);
+
       console.log('교수 스케줄 메시지 발송 성공');
     } catch (messageError) {
       console.log('교수 스케줄 메시지 발송 실패:', messageError);

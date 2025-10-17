@@ -4,6 +4,8 @@ import { supabase } from "../utils/supabaseClient";
 import { SchedulePolicy } from "../utils/schedulePolicy";
 import { ProfessorAutocomplete } from '../components/ProfessorAutocomplete';
 import axios from 'axios';
+import { sendMessage } from '../utils/naverWorksMessage';
+
 
 // 30분 단위 시간 옵션 생성
 const generateTimeOptions = () => {
@@ -2343,16 +2345,9 @@ const handleApprovalRequest = async (reason: string) => {
       return;
     }
 
-    // 메시지 전송
-    try {
-      await fetch('/api/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'approval_request',
-          message: message
-        })
-      });
+    // 메시지 발송
+    sendMessage(messageText, 'channel', []);
+
       console.log('✅ 승인요청 메시지 발송 성공');
     } catch (messageError) {
       console.log('❌ 승인요청 메시지 발송 실패:', messageError);
@@ -2594,14 +2589,9 @@ const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
 
     if (message) {
       try {
-        await fetch('/api/message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'approval_request',
-            message: message
-          })
-        });
+    // 메시지 발송
+    sendMessage(messageText, 'channel', []);
+
         console.log('✅ 재승인 메시지 발송 성공');
       } catch (messageError) {
         console.log('❌ 재승인 메시지 발송 실패:', messageError);
@@ -3172,19 +3162,9 @@ const checkScheduleConflictAndRecommend = async (
       const message = await generateAdminMessage('approval', formData, managerInfo?.name || '매니저');
 
       try {
-        await fetch('/api/message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'approval_request',
-            message: generateAdminMessage(
-              requestType,     // 'edit', 'approval' 등 실제 값
-              schedule,        // 실제 스케줄 객체
-              managerName,     // 실제 매니저 이름
-              reason          // 실제 사유 (선택적)
-            )
-          })
-        });
+      // 메시지 발송
+      sendMessage(messageText, 'channel', []);
+
       } catch (err) {
         console.log('메시지 발송 실패:', err);
       }

@@ -8,6 +8,8 @@ import AcademyScheduleModal from "./modals/AcademyScheduleModal";
 import { useWeek } from "../contexts/WeekContext";
 import { UnifiedScheduleCard } from "./cards/UnifiedScheduleCard";
 import { ScheduleCardErrorBoundary } from "./ErrorBoundary";
+import { sendMessage } from '@/utils/naverWorksMessage';
+
 
 const getUserNumericId = (): number => {
   const numericId = localStorage.getItem('userNumericId');
@@ -833,14 +835,9 @@ const sendScheduleNotification = async (
         scheduleId
       });
 
-      const response = await fetch('/api/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: messageType,
-          message: messageText
-        })
-      });
+        // 메시지 발송
+        sendMessage(messageText, 'channel', []);
+
 
       // 📥 응답 상세 로그
       console.log('📥 응답 상태:', response.status);
