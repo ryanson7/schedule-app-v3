@@ -1,4 +1,4 @@
-// pages/admin/index.tsx - 문법 오류 수정 버전
+// pages/admin/index.tsx
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../utils/supabaseClient';
@@ -35,16 +35,35 @@ interface PendingItem {
   originalId: number;
 }
 
-// ✅ 수정된 ErrorState 타입
 interface ErrorState {
   context: string;
   message: string;
 }
 
+interface AttendanceInfo {
+  name: string;
+  notes?: string;
+}
+
+interface LocationAttendance {
+  locationName: string;
+  displayOrder: number;
+  people: AttendanceInfo[];
+}
+
+// ✅ 시간 포맷 함수 (09:00 → 9)
+const formatTime = (time: string): string => {
+  if (!time) return '';
+  const [h, m] = time.split(':');
+  const hour = parseInt(h, 10);
+  const minute = m === '00' ? '' : `:${m}`;
+  return `${hour}${minute}`;
+};
+
 export default function AdminDashboard(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const [errorState, setErrorState] = useState<ErrorState | null>(null); // ✅ 수정된 타입 사용
+  const [errorState, setErrorState] = useState<ErrorState | null>(null);
   const [stats, setStats] = useState<Stats>({
     academySchedules: 0, studioSchedules: 0, studioUsage: 0, 
     shootingPeople: 0, academyPending: 0, studioPending: 0, internal: 0,
@@ -53,12 +72,24 @@ export default function AdminDashboard(): JSX.Element {
   });
   const [todayTasks, setTodayTasks] = useState<TodayTask[]>([]);
   const [pendingList, setPendingList] = useState<PendingItem[]>([]);
+  const [attendanceData, setAttendanceData] = useState<LocationAttendance[]>([]);
+  const [dayOffPeople, setDayOffPeople] = useState<string[]>([]);
+  const [eventTasks, setEventTasks] = useState<TodayTask[]>([]);
+  const [earlyLeavePeople, setEarlyLeavePeople] = useState<string[]>([]); // ✅ 조기퇴근
+  
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  
   const router = useRouter();
 
-  // 오늘 날짜 메모이제이션
-  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const formattedDate = useMemo(() => {
+    const date = new Date(selectedDate);
+    const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const weekday = weekdays[date.getDay()];
+    return `${month}/${day}(${weekday})`;
+  }, [selectedDate]);
 
-  // 모바일 감지 최적화
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -70,15 +101,16 @@ export default function AdminDashboard(): JSX.Element {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // ✅ 수정: 인증 후 바로 데이터 로딩
   useEffect(() => {
     checkAuth();
-    loadDashboardData();
-    
-    // 5분마다 자동 새로고침
-    const interval = setInterval(loadDashboardData, 5 * 60 * 1000);
-    
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      loadDashboardData();
+    }
+  }, [selectedDate, loading]); // ✅ loading 의존성 추가
 
   const checkAuth = useCallback(() => {
     try {
@@ -91,70 +123,47 @@ export default function AdminDashboard(): JSX.Element {
       }
       logger.auth.info('관리자 인증 완료', { userRole });
       setLoading(false);
+      // ✅ 인증 완료 후 바로 로딩
+      loadDashboardData();
     } catch (error) {
       logger.auth.error('인증 확인 오류', error);
       router.push('/');
     }
   }, [router]);
 
-  // 에러 처리 헬퍼
   const handleError = useCallback((error: any, context: string) => {
     logger.error(`${context} 오류`, error);
     
     const userMessage = error.message?.includes('network') 
       ? '네트워크 연결을 확인해주세요.' 
-      : '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+      : '일시적인 오류가 발생했습니다.';
       
     setErrorState({ context, message: userMessage });
-    
-    // 5초 후 에러 상태 초기화
     setTimeout(() => setErrorState(null), 5000);
   }, []);
 
-  // 안전한 시간 계산 헬퍼 함수
   const safeCalculateDuration = useCallback((startTime: string, endTime: string): number => {
     try {
-      if (!startTime || !endTime || typeof startTime !== 'string' || typeof endTime !== 'string') {
-        logger.warn('Invalid time parameters', { startTime, endTime });
-        return 0;
-      }
+      if (!startTime || !endTime) return 0;
       
       const timeRegex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
-      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
-        logger.warn('Invalid time format', { startTime, endTime });
-        return 0;
-      }
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) return 0;
       
-      const [startHour, startMinute] = startTime.split(':').map(n => parseInt(n) || 0);
-      const [endHour, endMinute] = endTime.split(':').map(n => parseInt(n) || 0);
-      
-      if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23 || 
-          startMinute < 0 || startMinute > 59 || endMinute < 0 || endMinute > 59) {
-        logger.warn('Time values out of range', { startTime, endTime });
-        return 0;
-      }
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      const [endHour, endMinute] = endTime.split(':').map(Number);
       
       const startTotalMinutes = startHour * 60 + startMinute;
       const endTotalMinutes = endHour * 60 + endMinute;
       const durationMinutes = endTotalMinutes - startTotalMinutes;
       
-      const durationHours = durationMinutes / 60;
-      const result = durationHours > 0 ? durationHours : 0;
-      
-      return result;
+      return durationMinutes > 0 ? durationMinutes / 60 : 0;
     } catch (error) {
-      logger.error('시간 계산 오류', { startTime, endTime, error });
       return 0;
     }
   }, []);
 
-  // 데이터 검증 함수
   const validateScheduleData = useCallback((data: any[]): boolean => {
-    if (!Array.isArray(data)) {
-      logger.warn('Schedule data is not an array', { data });
-      return false;
-    }
-    
+    if (!Array.isArray(data)) return false;
     return data.every(item => 
       item && 
       typeof item.start_time === 'string' && 
@@ -162,23 +171,232 @@ export default function AdminDashboard(): JSX.Element {
     );
   }, []);
 
-  // 카운팅 함수
+  // ✅ 근태 현황 조회 (조기출근 + 조기퇴근 포함)
+    const getAttendanceData = useCallback(async (dateString: string) => {
+    try {
+      logger.info('근태 현황 조회 시작', { date: dateString });
+      
+      const { data: schedules, error: scheduleError } = await supabase
+        .from('schedules')
+        .select(`
+          id, 
+          assigned_shooter_id, 
+          schedule_type,
+          sub_locations!inner (main_location_id)
+        `)
+        .eq('shoot_date', dateString)
+        .not('assigned_shooter_id', 'is', null);
+
+      if (scheduleError) throw scheduleError;
+
+      const { data: allEmployees } = await supabase
+        .from('users')
+        .select('id, name, email, role')
+        .eq('role', 'schedule_admin')
+        .neq('email', 'schedule@eduwill.net')
+        .neq('id', 2)
+        .eq('is_active', true);
+
+      const shooterIds = schedules?.map(s => s.assigned_shooter_id).filter(Boolean) || [];
+      let employeeMap = new Map();
+      let freelancerSet = new Set();
+      let assignedEmployeeIds = new Set();
+      
+      if (shooterIds.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, name, email, role')
+          .in('id', shooterIds);
+        
+        users?.forEach(u => {
+          if (u.email === 'schedule@eduwill.net' || u.id === 2) return;
+          
+          if (u.role === 'freelancer' || u.role === 'shooter') {
+            freelancerSet.add(u.id);
+          } else if (u.role === 'schedule_admin') {
+            employeeMap.set(u.id, u.name);
+            assignedEmployeeIds.add(u.id);
+          }
+        });
+      }
+
+      const { data: internalTasks } = await supabase
+        .from('internal_schedules')
+        .select('*')
+        .eq('schedule_date', dateString)
+        .eq('is_active', true);
+
+      const dayOffList: string[] = [];
+      const eventList: TodayTask[] = [];
+      const earlyLeaveList: string[] = []; // ✅ 조기퇴근 (사유 포함)
+      const earlyArrivalMap = new Map<number, string>();
+      const dayOffEmployeeIds = new Set<number>();
+      const halfDayOffEmployeeIds = new Set<number>();
+
+      internalTasks?.forEach((task: any) => {
+        if (task.schedule_type === '개인휴무') {
+          const leaveType = task.leave_type || '';
+          const content = task.content || '';
+          dayOffList.push(content);
+          
+          if (task.user_id) {
+            if (leaveType === '반차') {
+              halfDayOffEmployeeIds.add(task.user_id);
+            } else {
+              dayOffEmployeeIds.add(task.user_id);
+            }
+          }
+        } else if (task.schedule_type === 'Helper') {
+          if (task.helper_type === 'early_arrival' && task.user_id) {
+            const timeStr = task.helper_time ? formatTime(task.helper_time) : '';
+            earlyArrivalMap.set(task.user_id, `${timeStr}출`);
+          } else if (task.helper_type === 'early_leave') {
+            // ✅ 조기퇴근 사유 포함
+            const reason = task.helper_reason ? ` (${task.helper_reason})` : '';
+            earlyLeaveList.push(`${task.content || ''}${reason}`);
+          }
+        } else if (task.schedule_type === '기타' || task.schedule_type === '행사') {
+          eventList.push({
+            id: task.id,
+            schedule_type: task.schedule_type,
+            content: task.content || '',
+            shadow_color: task.shadow_color || '#e0e0e0'
+          });
+        }
+      });
+
+      const attendanceMap = new Map<string, AttendanceInfo[]>();
+      const freelancerLocationMap = new Map<string, boolean>();
+      
+      const locations = [
+        '제작센터', '노량진(1관) 학원', '노량진(3관) 학원',
+        '수원학원', '노원학원', '부평학원', '신촌학원', '강남학원', '서면학원'
+      ];
+
+      locations.forEach(loc => {
+        attendanceMap.set(loc, []);
+        freelancerLocationMap.set(loc, false);
+      });
+
+      schedules?.forEach((schedule: any) => {
+        const userId = schedule.assigned_shooter_id;
+        const isFreelancer = freelancerSet.has(userId);
+        const userName = employeeMap.get(userId);
+        
+        if (dayOffEmployeeIds.has(userId) && !halfDayOffEmployeeIds.has(userId)) {
+          return;
+        }
+        
+        let locationName = '';
+        
+        if (schedule.schedule_type === 'studio') {
+          locationName = '제작센터';
+        } else if (schedule.schedule_type === 'academy') {
+          const mainLocationId = schedule.sub_locations?.main_location_id;
+          const mapping: Record<number, string> = {
+            1: '노량진(1관) 학원', 2: '노량진(3관) 학원',
+            3: '수원학원', 4: '노원학원', 5: '부평학원',
+            6: '신촌학원', 7: '강남학원', 9: '서면학원'
+          };
+          locationName = mapping[mainLocationId] || '';
+        }
+
+        if (locationName) {
+          if (isFreelancer) {
+            freelancerLocationMap.set(locationName, true);
+          } else if (userName) {
+            const people = attendanceMap.get(locationName) || [];
+            if (!people.find(p => p.name === userName)) {
+              const earlyNote = earlyArrivalMap.get(userId);
+              people.push({ 
+                name: userName, 
+                notes: earlyNote 
+              });
+              attendanceMap.set(locationName, people);
+            }
+          }
+        }
+      });
+
+      internalTasks?.forEach((task: any) => {
+        if (task.schedule_type === '당직') {
+          const people = attendanceMap.get('제작센터') || [];
+          if (!people.find(p => p.name === task.content)) {
+            people.push({ name: task.content, notes: '당직' });
+            attendanceMap.set('제작센터', people);
+          }
+        }
+      });
+
+      // ✅ 주말 판단 (토요일=6, 일요일=0)
+      const selectedDay = new Date(dateString).getDay();
+      const isWeekend = selectedDay === 0 || selectedDay === 6;
+
+      allEmployees?.forEach(emp => {
+        const isAssigned = assignedEmployeeIds.has(emp.id);
+        const isDayOff = dayOffEmployeeIds.has(emp.id) && !halfDayOffEmployeeIds.has(emp.id);
+        
+        if (!isAssigned && !isDayOff) {
+          // ✅ 주말이면 휴무자로 처리
+          if (isWeekend) {
+            if (!dayOffList.includes(emp.name)) {
+              dayOffList.push(emp.name);
+            }
+          } else {
+            // 평일이면 제작센터에 배치
+            const people = attendanceMap.get('제작센터') || [];
+            if (!people.find(p => p.name === emp.name)) {
+              const earlyNote = earlyArrivalMap.get(emp.id);
+              people.push({ 
+                name: emp.name,
+                notes: earlyNote
+              });
+              attendanceMap.set('제작센터', people);
+            }
+          }
+        }
+      });
+
+      const result = locations.map((loc, idx) => {
+        const people = attendanceMap.get(loc) || [];
+        const hasFree = freelancerLocationMap.get(loc) || false;
+        
+        return {
+          locationName: loc,
+          displayOrder: idx + 1,
+          people: people.length === 0 && hasFree ? [{ name: '위탁직' }] : people
+        };
+      });
+
+      return { 
+        attendance: result, 
+        dayOff: dayOffList, 
+        events: eventList,
+        earlyLeave: earlyLeaveList
+      };
+
+    } catch (error) {
+      console.error('❌ 근태 조회 에러:', error);
+      handleError(error, '근태 현황 조회');
+      return { attendance: [], dayOff: [], events: [], earlyLeave: [] };
+    }
+  }, [handleError]);
+
+
+  // ✅ 나머지 함수들은 동일...
   const getScheduleCountWithShooters = useCallback(async (dateString: string) => {
     try {
-      logger.info('스케줄 카운팅 시작', { date: dateString });
-      
-      // 병렬 처리로 성능 개선
       const [academyResult, studioResult] = await Promise.all([
         supabase
           .from('schedules')
-          .select('id, assigned_shooter_id, shoot_date, professor_name, start_time, end_time, sub_location_id, schedule_type')
+          .select('id, assigned_shooter_id, start_time, end_time, schedule_type')
           .eq('shoot_date', dateString)
           .not('assigned_shooter_id', 'is', null)
           .eq('schedule_type', 'academy'),
         
         supabase
           .from('schedules')
-          .select('id, assigned_shooter_id, shoot_date, professor_name, course_name, schedule_type, start_time, end_time')
+          .select('id, assigned_shooter_id, start_time, end_time, schedule_type')
           .eq('shoot_date', dateString)
           .not('assigned_shooter_id', 'is', null)
           .eq('schedule_type', 'studio')
@@ -190,26 +408,21 @@ export default function AdminDashboard(): JSX.Element {
       const academyData = academyResult.data || [];
       const studioData = studioResult.data || [];
 
-      // 데이터 검증
       if (!validateScheduleData(academyData) || !validateScheduleData(studioData)) {
         throw new Error('Invalid schedule data format');
       }
       
-      // 학원 총 시간 계산
       let academyTotalHours = 0;
       academyData.forEach(schedule => {
-        const duration = safeCalculateDuration(schedule.start_time, schedule.end_time);
-        academyTotalHours += duration;
+        academyTotalHours += safeCalculateDuration(schedule.start_time, schedule.end_time);
       });
       
-      // 스튜디오 총 시간 계산
       let studioTotalHours = 0;
       studioData.forEach(schedule => {
-        const duration = safeCalculateDuration(schedule.start_time, schedule.end_time);
-        studioTotalHours += duration;
+        studioTotalHours += safeCalculateDuration(schedule.start_time, schedule.end_time);
       });
       
-      const result = {
+      return {
         academyCount: academyData.length,
         studioCount: studioData.length,
         academyHours: academyTotalHours.toFixed(1),
@@ -218,9 +431,6 @@ export default function AdminDashboard(): JSX.Element {
         academyData,
         studioData
       };
-
-      logger.info('스케줄 카운팅 완료', result);
-      return result;
       
     } catch (error) {
       handleError(error, '스케줄 카운팅');
@@ -252,7 +462,6 @@ export default function AdminDashboard(): JSX.Element {
         totalUsed: usedHours
       };
     } catch (error) {
-      logger.error('스튜디오 사용률 계산 오류', error);
       return {
         rate: 0,
         totalAvailable: 150,
@@ -272,7 +481,6 @@ export default function AdminDashboard(): JSX.Element {
         totalPeople: academyPeople + studioPeople
       };
     } catch (error) {
-      logger.error('촬영 인원 계산 오류', error);
       return {
         academyPeople: 0,
         studioPeople: 0,
@@ -281,24 +489,25 @@ export default function AdminDashboard(): JSX.Element {
     }
   }, []);
 
+  // ✅ 승인대기 목록 (DB 기반, 하드코딩 제거)
   const getPendingApprovalList = useCallback(async (): Promise<PendingItem[]> => {
     try {
-      logger.info('승인 대기 목록 조회 시작');
-      
       const [academyResult, studioResult] = await Promise.all([
         supabase
           .from('schedules')
           .select('id, professor_name, shoot_date, sub_location_id')
           .eq('approval_status', 'pending')
           .eq('schedule_type', 'academy')
-          .limit(5),
+          .order('shoot_date', { ascending: true })
+          .limit(10),
         
         supabase
           .from('schedules')
           .select('id, professor_name, course_name, shoot_date')
           .eq('approval_status', 'pending')
           .eq('schedule_type', 'studio')
-          .limit(5)
+          .order('shoot_date', { ascending: true })
+          .limit(10)
       ]);
 
       if (academyResult.error) throw academyResult.error;
@@ -326,13 +535,9 @@ export default function AdminDashboard(): JSX.Element {
         });
       });
 
-      const sortedResult = combined.sort((a, b) => 
+      return combined.sort((a, b) => 
         new Date(a.date).getTime() - new Date(b.date).getTime()
       );
-
-      logger.info('승인 대기 목록 조회 완료', { count: sortedResult.length });
-      return sortedResult;
-
     } catch (error) {
       handleError(error, '승인 대기 목록 조회');
       return [];
@@ -341,27 +546,28 @@ export default function AdminDashboard(): JSX.Element {
 
   const loadDashboardData = useCallback(async () => {
     try {
-      logger.info('대시보드 데이터 로딩 시작', { date: today });
+      logger.info('대시보드 데이터 로딩 시작', { date: selectedDate });
       
-      // 병렬 처리로 성능 최적화
-      const [internalResult, scheduleResult, pendingResult] = await Promise.all([
+      const [
+        internalResult,
+        scheduleResult,
+        pendingResult,
+        attendanceResult
+      ] = await Promise.all([
         supabase
           .from('internal_schedules')
           .select('*')
-          .eq('schedule_date', today)
+          .eq('schedule_date', selectedDate)
           .eq('is_active', true),
         
-        getScheduleCountWithShooters(today),
-        
-        getPendingApprovalList()
+        getScheduleCountWithShooters(selectedDate),
+        getPendingApprovalList(),
+        getAttendanceData(selectedDate)
       ]);
 
       if (internalResult.error) throw internalResult.error;
 
-      // 스튜디오 사용률 계산
       const usageData = calculateStudioUsageRate(scheduleResult.totalUsedHours);
-      
-      // 촬영 인원 계산
       const peopleData = getShootingPeopleCount(scheduleResult.academyData, scheduleResult.studioData);
       
       setTodayTasks(internalResult.data || []);
@@ -381,24 +587,20 @@ export default function AdminDashboard(): JSX.Element {
         internal: internalResult.data?.length || 0
       });
       setPendingList(pendingResult);
+      
+      setAttendanceData(attendanceResult.attendance);
+      setDayOffPeople(attendanceResult.dayOff);
+      setEventTasks(attendanceResult.events);
+      setEarlyLeavePeople(attendanceResult.earlyLeave); // ✅ 조기퇴근
 
-      logger.info('대시보드 데이터 로딩 완료', {
-        stats: {
-          academy: scheduleResult.academyCount,
-          studio: scheduleResult.studioCount,
-          internal: internalResult.data?.length || 0,
-          pending: pendingResult.length
-        }
-      });
+      logger.info('대시보드 데이터 로딩 완료');
 
     } catch (error) {
       handleError(error, '대시보드 데이터 로딩');
     }
-  }, [today, getScheduleCountWithShooters, calculateStudioUsageRate, getShootingPeopleCount, getPendingApprovalList, handleError]);
+  }, [selectedDate, getScheduleCountWithShooters, calculateStudioUsageRate, getShootingPeopleCount, getPendingApprovalList, getAttendanceData, handleError]);
 
   const handleStatCardClick = useCallback((type: string) => {
-    logger.info('통계 카드 클릭', { type });
-    
     switch (type) {
       case 'academy':
         router.push('/academy-schedules');
@@ -406,52 +608,54 @@ export default function AdminDashboard(): JSX.Element {
       case 'studio':
         router.push('/studio-admin');
         break;
-      default:
-        logger.warn('Unknown stat card type', { type });
-        break;
     }
   }, [router]);
 
-  // 오늘 스케줄 보기 핸들러
   const handleTodayScheduleClick = useCallback(() => {
-    logger.info('오늘 스케줄 보기 클릭');
     router.push('/daily');
   }, [router]);
 
+  // ✅ 승인대기 클릭 시 해당 스케줄로 이동
+  const handlePendingClick = useCallback((item: PendingItem) => {
+    if (item.type === 'academy') {
+      router.push(`/academy-schedules?scheduleId=${item.originalId}`);
+    } else {
+      router.push(`/studio-admin?scheduleId=${item.originalId}`);
+    }
+  }, [router]);
+
+  const handleDateChange = useCallback((direction: 'prev' | 'next' | 'today') => {
+    const currentDate = new Date(selectedDate);
+    
+    if (direction === 'prev') {
+      currentDate.setDate(currentDate.getDate() - 1);
+    } else if (direction === 'next') {
+      currentDate.setDate(currentDate.getDate() + 1);
+    } else if (direction === 'today') {
+      setSelectedDate(new Date().toISOString().split('T')[0]);
+      return;
+    }
+    
+    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  }, [selectedDate]);
+
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        minHeight: '100vh',
-        backgroundColor: '#f8fafc'
-      }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          border: '4px solid #e5e7eb',
-          borderTop: '4px solid #3b82f6',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
-        <style jsx>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+        <div style={{ width: '40px', height: '40px', border: '4px solid #e5e7eb', borderTop: '4px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }}>
+          <style jsx>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#f8fafc',
-      padding: isMobile ? '16px' : '20px'
-    }}>
-      {/* 에러 토스트 */}
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: isMobile ? '16px' : '20px' }}>
       {errorState && (
         <div style={{
           position: 'fixed',
@@ -472,7 +676,7 @@ export default function AdminDashboard(): JSX.Element {
       )}
 
       <div className="admin-dashboard">
-        {/* 수정된 헤더 (오늘 스케줄 보기 버튼 추가) */}
+        {/* ✅ 헤더 (날짜 버튼 개선) */}
         <div className="header">
           <div className="header-content">
             <div className="header-left">
@@ -481,175 +685,219 @@ export default function AdminDashboard(): JSX.Element {
                 {new Date().toLocaleDateString('ko-KR', { 
                   month: isMobile ? 'short' : 'long', 
                   day: 'numeric', 
-                  weekday: 'short'
+                  weekday: 'short' 
                 })}
               </span>
+              {/* ✅ 날짜 네비게이션 개선 */}
+              <div className="date-navigation">
+                <button className="date-nav-btn" onClick={() => handleDateChange('prev')}>
+                  <span>◀</span>
+                </button>
+                <div className="selected-date">{formattedDate}</div>
+                <button className="date-nav-btn" onClick={() => handleDateChange('next')}>
+                  <span>▶</span>
+                </button>
+                <button className="date-nav-btn today" onClick={() => handleDateChange('today')}>오늘</button>
+              </div>
             </div>
-            {/* 오늘 스케줄 보기 버튼 */}
-            <button 
-              className="today-schedule-btn"
-              onClick={handleTodayScheduleClick}
-            >
-              {isMobile ? '📅 오늘' : '📅 오늘 스케줄 보기'}
+            <button className="today-schedule-btn" onClick={handleTodayScheduleClick}>
+              {isMobile ? '📅 오늘 스케줄' : '📅 오늘 스케줄 보기'}
             </button>
           </div>
         </div>
 
-        {/* 깔끔한 통계 카드 */}
+        {/* ✅ 상단 4개 카드 (이모티콘 삭제, 사이즈 축소) */}
         <div className="stats-row">
-          {/* 학원 촬영 카드 */}
-          <div 
-            className="stat-card academy clickable"
-            onClick={() => handleStatCardClick('academy')}
-          >
+          <div className="stat-card academy clickable" onClick={() => handleStatCardClick('academy')}>
             <div className="stat-content">
               <div className="stat-number">{stats.academySchedules}</div>
-              <div className="stat-label">{isMobile ? '학원' : '학원 촬영'}</div>
-              {isMobile ? (
-                <div className="stat-hours">{stats.academyHours}h</div>
-              ) : (
-                <div className="stat-details">
-                  <div className="stat-time">{stats.academyHours}시간</div>
-                  <div className="stat-link">학원 스케줄로 이동 →</div>
-                </div>
-              )}
+              <div className="stat-label">{isMobile ? '학원' : '학원 스케줄'}</div>
+              <div className="stat-hours">{stats.academyHours}h</div>
             </div>
           </div>
 
-          {/* 스튜디오 촬영 카드 */}
-          <div 
-            className="stat-card studio clickable"
-            onClick={() => handleStatCardClick('studio')}
-          >
+          <div className="stat-card studio clickable" onClick={() => handleStatCardClick('studio')}>
             <div className="stat-content">
               <div className="stat-number">{stats.studioSchedules}</div>
-              <div className="stat-label">{isMobile ? '스튜디오' : '스튜디오 촬영'}</div>
-              {isMobile ? (
-                <div className="stat-hours">{stats.studioHours}h</div>
-              ) : (
-                <div className="stat-details">
-                  <div className="stat-time">{stats.studioHours}시간</div>
-                  <div className="stat-link">스튜디오 스케줄로 이동 →</div>
-                </div>
-              )}
+              <div className="stat-label">{isMobile ? '스튜디오' : '스튜디오 스케줄'}</div>
+              <div className="stat-hours">{stats.studioHours}h</div>
             </div>
           </div>
 
-          {/* 스튜디오 사용률 */}
           <div className="stat-card usage">
             <div className="stat-content">
               <div className="stat-number">{stats.studioUsage}%</div>
-              <div className="stat-label">{isMobile ? '스튜디오 사용률' : '스튜디오 사용률'}</div>
-              {isMobile ? (
-                <div className="stat-hours">{stats.totalUsedHours}/{stats.totalAvailableHours}h</div>
-              ) : (
-                <div className="stat-details">
-                  <div className="usage-detail">
-                    {stats.totalUsedHours}시간 / {stats.totalAvailableHours}시간
-                  </div>
-                  <div className="stat-description">15개 스튜디오 기준</div>
-                </div>
-              )}
+              <div className="stat-label">{isMobile ? '가동률' : '스튜디오 가동률'}</div>
+              <div className="stat-hours">{stats.totalUsedHours}/{stats.totalAvailableHours}h</div>
             </div>
           </div>
 
-          {/* 촬영 인원 */}
           <div className="stat-card people">
             <div className="stat-content">
-              <div className="stat-number">{stats.shootingPeople}명</div>
+              <div className="stat-number">{stats.shootingPeople}</div>
               <div className="stat-label">{isMobile ? '촬영인원' : '촬영 인원'}</div>
-              {isMobile ? (
-                <div className="stat-hours">학원{stats.academyPeople} · 스튜디오{stats.studioPeople}</div>
-              ) : (
-                <div className="stat-details">
-                  <div className="people-detail">
-                    학원 {stats.academyPeople}명 · 스튜디오 {stats.studioPeople}명
-                  </div>
-                  <div className="stat-description">오늘 배치된 전체 인원</div>
-                </div>
-              )}
+              <div className="stat-hours">{stats.academyPeople} + {stats.studioPeople}</div>
             </div>
           </div>
         </div>
 
-        {/* 수정된 메인 콘텐츠 (1:1 비율) */}
-        <div className="main-content">
-          {/* 승인 대기 목록 */}
+        {/* 2x2 그리드 */}
+        <div className="main-content-grid">
+          {/* 왼쪽 상단: 직원 촬영 및 근태 현황 */}
           <div className="panel">
-            <h3>승인 대기 목록</h3>
-            {pendingList.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">✅</div>
-                <p>승인 대기 건이 없습니다.</p>
+            <h3>👥 직원 촬영 및 근태 현황</h3>
+            <div className="attendance-content">
+              <div className="attendance-list compact">
+                {[
+                  '제작센터',
+                  '노량진(1관) 학원',
+                  '노량진(3관) 학원',
+                  '수원학원',
+                  '노원학원',
+                  '부평학원',
+                  '신촌학원',
+                  '강남학원',
+                  '서면학원'
+                ].map((locationName, index) => {
+                  const locationData = attendanceData.find((loc) => loc.locationName === locationName);
+                  const people = locationData?.people || [];
+
+                  return (
+                    <div key={index} className="attendance-row">
+                      <span className="location-number">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="location-name">{locationName}</span>
+                      <span className="location-staff">
+                        {people.length === 0 ? (
+                          <span className="no-staff">없음</span>
+                        ) : (
+                          people.map((person, idx) => (
+                            <React.Fragment key={idx}>
+                              {person.name === '위탁직' ? (
+                                <span className="outsourced-tag">{person.name}</span>
+                              ) : (
+                                person.name
+                              )}
+                              {person.notes && <span className="staff-note">({person.notes})</span>}
+                              {idx < people.length - 1 && ((idx + 1) % 6 === 0 ? <br /> : ', ')}
+                            </React.Fragment>
+                          ))
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 오른쪽 상단: 오늘의 업무 */}
+          <div className="panel">
+            <div className="panel-header">
+              <h3>📝 오늘의 업무</h3>
+              <button className="link-btn" onClick={() => router.push('/internal-schedules')}>
+                {isMobile ? '➕' : '업무 관리'}
+              </button>
+            </div>
+            <div className="task-list compact">
+              {/* ✅ 휴무자 (한 줄 표기) */}
+              {dayOffPeople.length > 0 && (
+                <div className="task-section">
+                  <div className="task-section-title">🏖️ 휴무자</div>
+                  <div className="task-single-line">
+                    {dayOffPeople.join(', ')}
+                  </div>
+                </div>
+              )}
+
+              {/* ✅ 조기퇴근 (사유 포함) */}
+              {earlyLeavePeople.length > 0 && (
+                <div className="task-section">
+                  <div className="task-section-title">🚪 조기퇴근</div>
+                  {earlyLeavePeople.map((person, idx) => (
+                    <div key={`leave-${idx}`} className="task-item small">
+                      <div className="task-dot leave"></div>
+                      <span className="task-content">{person}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 기타 업무 */}
+              {eventTasks.length > 0 && (
+                <div className="task-section">
+                  <div className="task-section-title">📋 기타 업무</div>
+                  {eventTasks.map((task) => (
+                    <div key={task.id} className="task-item">
+                      <div className="task-dot" style={{ backgroundColor: task.shadow_color || '#666' }}></div>
+                      <div className="task-info">
+                        <span className="task-type">{task.schedule_type}</span>
+                        <span className="task-content">{task.content}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {eventTasks.length === 0 && dayOffPeople.length === 0 && earlyLeavePeople.length === 0 && (
+                <div className="empty-state small">
+                  <p>오늘 등록된 업무가 없습니다.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 왼쪽 하단: 학원 승인대기 */}
+          <div className="panel">
+            <h3>🏫 학원 승인대기 ({pendingList.filter(p => p.type === 'academy').length})</h3>
+            {pendingList.filter(p => p.type === 'academy').length === 0 ? (
+              <div className="empty-state small">
+                <p>승인 대기 중인 학원 스케줄이 없습니다.</p>
               </div>
             ) : (
-              <div className="approval-list">
-                {pendingList.map(item => (
-                  <div key={item.id} className={`approval-item ${item.type}`}>
-                    <div className="approval-type">
-                      {item.type === 'academy' ? (isMobile ? '학원' : '🎓 학원') : (isMobile ? '스튜디오' : '🏢 스튜디오')}
-                    </div>
+              <div className="approval-list compact">
+                {pendingList.filter(p => p.type === 'academy').map((item) => (
+                  <div 
+                    key={item.id} 
+                    className="approval-item compact academy"
+                    onClick={() => handlePendingClick(item)}
+                  >
                     <div className="approval-content">
                       <div className="approval-title">{item.title}</div>
                       <div className="approval-date">{item.date}</div>
                     </div>
-                    <button 
-                      className="approve-btn"
-                      onClick={() => {
-                        if (item.type === 'academy') {
-                          router.push('/academy-schedules');
-                        } else {
-                          router.push('/studio-admin');
-                        }
-                      }}
-                    >
-                      {isMobile ? '관리' : (item.type === 'academy' ? '학원 관리' : '스튜디오 관리')}
-                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* 오늘의 내부업무 */}
+          {/* 오른쪽 하단: 스튜디오 승인대기 */}
           <div className="panel">
-            <div className="panel-header">
-              <h3>📅 내부업무 ({stats.internal}건)</h3>
-              <button 
-                className="link-btn"
-                onClick={() => router.push('/internal-schedules')}
-              >
-                {isMobile ? '전체' : '전체보기'} →
-              </button>
-            </div>
-            {todayTasks.length === 0 ? (
+            <h3>🎥 스튜디오 승인대기 ({pendingList.filter(p => p.type === 'studio').length})</h3>
+            {pendingList.filter(p => p.type === 'studio').length === 0 ? (
               <div className="empty-state small">
-                <p>{isMobile ? '내부업무가 없습니다.' : '오늘 예정된 내부업무가 없습니다.'}</p>
+                <p>승인 대기 중인 스튜디오 스케줄이 없습니다.</p>
               </div>
             ) : (
-              <div className="task-list compact">
-                {todayTasks.slice(0, 4).map(task => (
-                  <div key={task.id} className="task-item">
-                    <div 
-                      className="task-dot"
-                      style={{ backgroundColor: task.shadow_color || '#666' }}
-                    />
-                    <div className="task-info">
-                      <span className="task-type">{task.schedule_type}</span>
-                      <span className="task-content">{task.content || '내용 없음'}</span>
+              <div className="approval-list compact">
+                {pendingList.filter(p => p.type === 'studio').map((item) => (
+                  <div 
+                    key={item.id} 
+                    className="approval-item compact studio"
+                    onClick={() => handlePendingClick(item)}
+                  >
+                    <div className="approval-content">
+                      <div className="approval-title">{item.title}</div>
+                      <div className="approval-date">{item.date}</div>
                     </div>
                   </div>
                 ))}
-                {todayTasks.length > 4 && (
-                  <div className="more-tasks">+{todayTasks.length - 4}개 더</div>
-                )}
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* 수정된 CSS */}
       <style jsx global>{`
         .admin-dashboard {
           max-width: 1200px;
@@ -671,7 +919,7 @@ export default function AdminDashboard(): JSX.Element {
 
         .header-left {
           display: flex;
-          ${isMobile ? 'flex-direction: column; align-items: center; gap: 8px; text-align: center;' : 'align-items: center; gap: 16px;'}
+          ${isMobile ? 'flex-direction: column; align-items: center; gap: 8px;' : 'align-items: center; gap: 16px; flex-wrap: wrap;'}
         }
 
         .header h1 {
@@ -687,21 +935,69 @@ export default function AdminDashboard(): JSX.Element {
           font-weight: 500;
         }
 
-        /* 오늘 스케줄 보기 버튼 스타일 */
+        /* ✅ 날짜 네비게이션 (간격 넓게) */
+        .date-navigation {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          background: white;
+          padding: 6px 12px;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
+
+        .date-nav-btn {
+          background: white;
+          border: 1px solid #dee2e6;
+          padding: 6px 14px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 600;
+          color: #495057;
+          transition: all 0.2s ease;
+          min-width: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .date-nav-btn:hover {
+          background: #f8f9fa;
+          border-color: #adb5bd;
+          transform: scale(1.05);
+        }
+
+        .date-nav-btn.today {
+          background: #007bff;
+          color: white;
+          border-color: #007bff;
+        }
+
+        .date-nav-btn.today:hover {
+          background: #0056b3;
+        }
+
+        .selected-date {
+          font-size: 14px;
+          font-weight: 700;
+          color: #2c3e50;
+          min-width: 90px;
+          text-align: center;
+          padding: 0 8px;
+        }
+
         .today-schedule-btn {
           background: #007bff;
           color: white;
           border: none;
-          padding: ${isMobile ? '8px 16px' : '12px 20px'};
-          border-radius: ${isMobile ? '6px' : '8px'};
+          padding: ${isMobile ? '8px 16px' : '10px 18px'};
+          border-radius: 8px;
           cursor: pointer;
-          font-size: ${isMobile ? '13px' : '14px'};
+          font-size: 14px;
           font-weight: 600;
           transition: all 0.2s ease;
           box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
-          display: flex;
-          align-items: center;
-          gap: ${isMobile ? '4px' : '8px'};
         }
 
         .today-schedule-btn:hover {
@@ -710,121 +1006,71 @@ export default function AdminDashboard(): JSX.Element {
           box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
         }
 
-        .today-schedule-btn:active {
-          transform: translateY(0);
-        }
-
+        /* ✅ 상단 카드 (이모티콘 삭제, 사이즈 축소) */
         .stats-row {
           display: grid;
-          grid-template-columns: ${isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(280px, 1fr))'};
-          gap: ${isMobile ? '12px' : '20px'};
-          margin-bottom: ${isMobile ? '24px' : '32px'};
+          grid-template-columns: ${isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)'};
+          gap: ${isMobile ? '12px' : '16px'};
+          margin-bottom: ${isMobile ? '20px' : '24px'};
         }
 
         .stat-card {
           background: white;
-          border-radius: 12px;
-          padding: ${isMobile ? '20px' : '24px'};
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          border-radius: 10px;
+          padding: ${isMobile ? '16px' : '18px'};
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
           border-left: 4px solid var(--color);
           transition: all 0.2s ease;
           cursor: pointer;
           text-align: center;
-          ${isMobile ? 'min-height: 110px; display: flex; align-items: center; justify-content: center;' : ''}
         }
 
         .stat-card:hover {
-          transform: ${isMobile ? 'scale(0.98)' : 'translateY(-4px)'};
-          box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+          transform: ${isMobile ? 'scale(0.98)' : 'translateY(-3px)'};
+          box-shadow: 0 6px 16px rgba(0,0,0,0.12);
         }
 
-        .stat-card:active {
-          transform: scale(0.95);
-        }
-
-        .stat-card.academy { --color: #007bff; --color-rgb: 0, 123, 255; }
-        .stat-card.studio { --color: #28a745; --color-rgb: 40, 167, 69; }
-        .stat-card.usage { --color: #17a2b8; --color-rgb: 23, 162, 184; }
-        .stat-card.people { --color: #ffc107; --color-rgb: 255, 193, 7; }
-
-        .stat-content {
-          width: 100%;
-        }
+        .stat-card.academy { --color: #007bff; }
+        .stat-card.studio { --color: #28a745; }
+        .stat-card.usage { --color: #17a2b8; }
+        .stat-card.people { --color: #ffc107; }
 
         .stat-number {
-          font-size: ${isMobile ? '32px' : '28px'};
+          font-size: ${isMobile ? '28px' : '32px'};
           font-weight: 700;
           color: #2c3e50;
-          margin-bottom: ${isMobile ? '8px' : '6px'};
-          line-height: 1;
+          margin-bottom: 6px;
         }
 
         .stat-label {
           color: #6c757d;
-          font-size: ${isMobile ? '14px' : '15px'};
+          font-size: 14px;
           font-weight: 600;
-          line-height: 1;
-          margin-bottom: ${isMobile ? '8px' : '8px'};
+          margin-bottom: 6px;
         }
 
         .stat-hours {
-          font-size: ${isMobile ? '12px' : '12px'};
-          color: var(--color);
-          font-weight: 600;
-          background: rgba(var(--color-rgb), 0.1);
-          padding: 4px 8px;
-          border-radius: 12px;
-          display: inline-block;
-        }
-
-        .stat-details {
-          ${isMobile ? 'display: none;' : 'margin-top: 8px;'}
-        }
-
-        .stat-time {
           font-size: 12px;
           color: var(--color);
           font-weight: 600;
-          margin-bottom: 4px;
         }
 
-        .usage-detail, .people-detail {
-          font-size: 11px;
-          color: #9ca3af;
-          font-weight: 500;
-          margin-bottom: 2px;
-        }
-
-        .stat-link {
-          font-size: 11px;
-          color: var(--color);
-          font-weight: 600;
-          opacity: 0.8;
-        }
-
-        .stat-description {
-          font-size: 11px;
-          color: #9ca3af;
-          font-weight: 500;
-        }
-
-        /* 수정된 메인 콘텐츠 (1:1 비율) */
-        .main-content {
+        .main-content-grid {
           display: grid;
           grid-template-columns: ${isMobile ? '1fr' : '1fr 1fr'};
-          gap: ${isMobile ? '16px' : '24px'};
+          gap: ${isMobile ? '16px' : '20px'};
         }
 
         .panel {
           background: white;
-          border-radius: ${isMobile ? '8px' : '12px'};
-          padding: ${isMobile ? '16px' : '24px'};
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          border-radius: 12px;
+          padding: ${isMobile ? '16px' : '20px'};
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
         }
 
         .panel h3 {
-          margin: 0 0 ${isMobile ? '16px' : '20px'} 0;
-          font-size: ${isMobile ? '16px' : '18px'};
+          margin: 0 0 16px 0;
+          font-size: ${isMobile ? '16px' : '17px'};
           font-weight: 600;
           color: #2c3e50;
         }
@@ -833,7 +1079,11 @@ export default function AdminDashboard(): JSX.Element {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: ${isMobile ? '16px' : '20px'};
+          margin-bottom: 16px;
+        }
+
+        .panel-header h3 {
+          margin: 0;
         }
 
         .link-btn {
@@ -841,174 +1091,200 @@ export default function AdminDashboard(): JSX.Element {
           border: none;
           color: #007bff;
           cursor: pointer;
-          font-size: ${isMobile ? '13px' : '14px'};
-          font-weight: 500;
-          transition: color 0.2s ease;
-          padding: ${isMobile ? '4px 8px' : '0'};
+          font-size: 13px;
+          font-weight: 600;
         }
 
-        .approval-list {
+        .link-btn:hover {
+          color: #0056b3;
+          text-decoration: underline;
+        }
+
+        /* ✅ 근태 리스트 (7개마다 줄바꿈, 상하 간격 좁게) */
+        .attendance-list.compact {
           display: flex;
           flex-direction: column;
-          gap: ${isMobile ? '8px' : '12px'};
+          gap: 4px;
+          max-height: 400px;
+          overflow-y: auto;
         }
 
-        .approval-item {
+        .attendance-row {
           display: flex;
-          align-items: center;
-          gap: ${isMobile ? '8px' : '16px'};
-          padding: ${isMobile ? '12px' : '16px'};
+          gap: 10px;
+          padding: 5px 8px;
           background: #f8f9fa;
-          border-radius: ${isMobile ? '6px' : '8px'};
-          border-left: 4px solid var(--type-color);
-          transition: all 0.2s ease;
+          border-radius: 6px;
+          font-size: 14px;
+          line-height: 1.6;
         }
 
-        .approval-item.academy { --type-color: #007bff; }
-        .approval-item.studio { --type-color: #28a745; }
+        .location-number {
+          font-weight: 700;
+          color: #495057;
+          min-width: 24px;
+          flex-shrink: 0;
+        }
 
-        .approval-type {
-          font-size: ${isMobile ? '12px' : '13px'};
+        .location-name {
           font-weight: 600;
-          color: var(--type-color);
-          min-width: ${isMobile ? '50px' : '70px'};
-          flex-shrink: 0;
-        }
-
-        .approval-content {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .approval-title {
-          font-weight: 500;
           color: #2c3e50;
-          margin-bottom: 3px;
-          font-size: ${isMobile ? '13px' : '14px'};
-          line-height: 1.3;
-        }
-
-        .approval-date {
-          font-size: ${isMobile ? '11px' : '12px'};
-          color: #6c757d;
-        }
-
-        .approve-btn {
-          background: var(--type-color);
-          color: white;
-          border: none;
-          padding: ${isMobile ? '6px 12px' : '8px 16px'};
-          border-radius: ${isMobile ? '4px' : '6px'};
-          cursor: pointer;
-          font-size: ${isMobile ? '11px' : '12px'};
-          font-weight: 500;
-          white-space: nowrap;
-          transition: all 0.2s ease;
+          min-width: ${isMobile ? '80px' : '120px'};
           flex-shrink: 0;
+        }
+
+        .location-staff {
+          flex: 1;
+          color: #495057;
+          line-height: 1.8;
+        }
+
+        .staff-note {
+          color: #6c757d;
+          font-size: 13px;
+          margin-left: 3px;
+        }
+
+        .no-staff {
+          color: #adb5bd;
+        }
+
+        .outsourced-tag {
+          color: #6c757d;
+          font-style: italic;
         }
 
         .task-list.compact {
           display: flex;
           flex-direction: column;
-          gap: ${isMobile ? '8px' : '12px'};
+          gap: 12px;
+          max-height: 400px;
+          overflow-y: auto;
+        }
+
+        .task-section {
+          margin-bottom: 8px;
+        }
+
+        .task-section-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #2c3e50;
+          margin-bottom: 8px;
+          padding-bottom: 4px;
+          border-bottom: 1px solid #e9ecef;
+        }
+
+        /* ✅ 휴무자 한 줄 표기 */
+        .task-single-line {
+          font-size: 14px;
+          color: #495057;
+          padding: 6px 0;
+          line-height: 1.6;
         }
 
         .task-item {
           display: flex;
           align-items: center;
-          gap: ${isMobile ? '8px' : '12px'};
-          padding: ${isMobile ? '8px 0' : '12px 0'};
+          gap: 10px;
+          padding: 6px 0;
           border-bottom: 1px solid #f3f4f6;
         }
 
+        .task-item.small {
+          padding: 4px 0;
+        }
+
+        .task-item:last-child {
+          border-bottom: none;
+        }
+
         .task-dot {
-          width: ${isMobile ? '8px' : '10px'};
-          height: ${isMobile ? '8px' : '10px'};
+          width: 10px;
+          height: 10px;
           border-radius: 50%;
           flex-shrink: 0;
         }
 
+        .task-dot.off {
+          background: #dc3545;
+        }
+
+        .task-dot.leave {
+          background: #ffc107;
+        }
+
+        .task-info {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
         .task-type {
-          font-size: ${isMobile ? '10px' : '12px'};
+          font-size: 11px;
           font-weight: 600;
           color: #495057;
           background: #e9ecef;
-          padding: ${isMobile ? '1px 6px' : '2px 8px'};
-          border-radius: ${isMobile ? '8px' : '12px'};
-          margin-right: ${isMobile ? '6px' : '8px'};
+          padding: 2px 8px;
+          border-radius: 12px;
         }
 
         .task-content {
-          font-size: ${isMobile ? '12px' : '14px'};
+          font-size: 13px;
           color: #6c757d;
-          line-height: 1.4;
         }
 
-        .empty-state {
-          text-align: center;
-          padding: ${isMobile ? '32px 16px' : '48px 20px'};
+        .approval-list.compact {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          max-height: 350px;
+          overflow-y: auto;
+        }
+
+        .approval-item.compact {
+          padding: 10px 12px;
+          background: #f8f9fa;
+          border-radius: 8px;
+          border-left: 3px solid var(--type-color);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .approval-item.compact:hover {
+          background: #e9ecef;
+          transform: translateX(3px);
+        }
+
+        .approval-item.academy { --type-color: #007bff; }
+        .approval-item.studio { --type-color: #28a745; }
+
+        .approval-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .approval-title {
+          flex: 1;
+          font-weight: 500;
+          color: #2c3e50;
+          font-size: 13px;
+        }
+
+        .approval-date {
+          font-size: 11px;
           color: #6c757d;
+          white-space: nowrap;
         }
 
         .empty-state.small {
-          padding: ${isMobile ? '20px' : '24px'};
-        }
-
-        .empty-icon {
-          font-size: ${isMobile ? '32px' : '48px'};
-          margin-bottom: ${isMobile ? '12px' : '16px'};
-        }
-
-        .more-tasks {
           text-align: center;
+          padding: 40px 20px;
           color: #6c757d;
-          font-size: ${isMobile ? '12px' : '13px'};
-          padding: ${isMobile ? '8px' : '12px'};
-          border-top: 1px solid #f3f4f6;
-        }
-
-        /* 매우 작은 모바일 최적화 */
-        @media (max-width: 480px) {
-          .stats-row {
-            gap: 10px;
-          }
-          
-          .stat-card {
-            padding: 16px;
-            min-height: 100px;
-          }
-          
-          .stat-number {
-            font-size: 28px;
-          }
-          
-          .stat-label {
-            font-size: 13px;
-          }
-          
-          .stat-hours {
-            font-size: 11px;
-          }
-          
-          .today-schedule-btn {
-            padding: 6px 12px;
-            font-size: 12px;
-          }
-        }
-
-        @media (max-width: 360px) {
-          .stat-card {
-            padding: 14px;
-            min-height: 95px;
-          }
-          
-          .stat-number {
-            font-size: 26px;
-          }
-          
-          .stat-label {
-            font-size: 12px;
-          }
+          font-size: 13px;
         }
       `}</style>
     </div>
