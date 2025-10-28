@@ -43,7 +43,7 @@ const UserDetailModal = ({
     try {
       // 사용자 상세 정보 로드
       const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
+        .from('users')
         .select('*')
         .eq('id', user.id)
         .single();
@@ -111,7 +111,7 @@ const UserDetailModal = ({
 
     try {
       const { error } = await supabase
-        .from('user_profiles')
+        .from('users')
         .update({ 
           updated_at: new Date().toISOString()
           // is_active: false (컬럼이 있다면)

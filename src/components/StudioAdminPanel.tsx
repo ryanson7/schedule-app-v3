@@ -167,6 +167,39 @@ export default function StudioAdminPanel({ currentUserRole }: StudioAdminPanelPr
     }
   };
 
+    // 🔥 통합 스케줄에서 촬영자 배정 시 자동 갱신
+  useEffect(() => {
+    if (!hasAccess || !isClient) return;
+
+    // localStorage 변경 감지 함수
+    const handleScheduleUpdate = () => {
+      const updatedFlag = localStorage.getItem('schedules_updated');
+      if (updatedFlag) {
+        const timestamp = parseInt(updatedFlag);
+        const now = Date.now();
+        
+        // 3초 이내의 업데이트만 처리 (중복 방지)
+        if (now - timestamp < 3000) {
+          console.log('🔄 [스튜디오] 통합 스케줄에서 촬영자 배정됨 - 데이터 재조회');
+          fetchSchedules();
+          localStorage.removeItem('schedules_updated');
+        }
+      }
+    };
+
+    // storage 이벤트 리스너 (다른 탭)
+    window.addEventListener('storage', handleScheduleUpdate);
+    
+    // 같은 탭에서도 체크 (1초마다)
+    const interval = setInterval(handleScheduleUpdate, 1000);
+
+    return () => {
+      window.removeEventListener('storage', handleScheduleUpdate);
+      clearInterval(interval);
+    };
+  }, [hasAccess, isClient]);
+
+
   const fetchShootingTypeMapping = async () => {
     try {
       const { data, error } = await supabase

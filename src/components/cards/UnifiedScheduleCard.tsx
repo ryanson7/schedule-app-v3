@@ -11,7 +11,7 @@ interface UnifiedScheduleCardProps {
   };
   onClick?: (schedule: any) => void;
   onContextMenu?: (schedule: any) => void;
-  
+
   // Studio 전용 props
   isDragging?: boolean;
   onDragStart?: (e: React.DragEvent, schedule: any) => void;
@@ -19,14 +19,14 @@ interface UnifiedScheduleCardProps {
   isAdmin?: boolean;
   onDelete?: (schedule: any) => void;
   onSoftDelete?: (schedule: any) => void;
-  
+
   // 통합스케줄용 props
   showShooterInfo?: boolean;
   shooterText?: string;
   showCheckbox?: boolean;
   isSelected?: boolean;
   onCheckboxChange?: (checked: boolean) => void;
-  
+
   style?: React.CSSProperties;
 }
 
@@ -61,7 +61,7 @@ const textStyles = {
 
 // 🔥 공통 상태 처리 함수
 const getStatusInfo = (approvalStatus: string, isActive: boolean) => {
-  if (!isActive) {
+  if (isActive === false) {
     if (approvalStatus === 'cancelled') {
       return {
         text: '취소완료',
@@ -149,7 +149,7 @@ const getStatusInfo = (approvalStatus: string, isActive: boolean) => {
 // 🔥 Academy + Studio 통합 촬영형식 스타일
 const getShootingTypeStyle = (type: string, scheduleType: 'academy' | 'studio') => {
   // Academy 촬영형식
-  const academyStyles = {
+  const academyStyles: Record<string, any> = {
     '촬영': {
       background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%)',
       color: '#16A34A',
@@ -189,7 +189,7 @@ const getShootingTypeStyle = (type: string, scheduleType: 'academy' | 'studio') 
   };
 
   // Studio 촬영형식
-  const studioStyles = {
+  const studioStyles: Record<string, any> = {
     'PPT': {
       background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%)',
       color: '#2563EB',
@@ -269,8 +269,8 @@ const getShootingTypeStyle = (type: string, scheduleType: 'academy' | 'studio') 
   return styles[type] || defaultStyle;
 };
 
-export const UnifiedScheduleCard = ({ 
-  schedule, 
+export const UnifiedScheduleCard = ({
+  schedule,
   scheduleType,
   locationColor,
   onClick,
@@ -291,10 +291,10 @@ export const UnifiedScheduleCard = ({
   const [isHovered, setIsHovered] = useState(false);
   const isDragActiveRef = useRef(false);
 
-  // 🔥 공통 데이터 처리
+  // 🔥 공통 데이터 처리(안전한 폴백)
   const safeSchedule = {
-    startTime: schedule?.start_time?.substring(0, 5) || '00:00',
-    endTime: schedule?.end_time?.substring(0, 5) || '00:00',
+    startTime: schedule?.start_time ? String(schedule.start_time).substring(0, 5) : '00:00',
+    endTime: schedule?.end_time ? String(schedule.end_time).substring(0, 5) : '00:00',
     professorName: schedule?.professor_name || schedule?.task_name || '교수명 없음',
     courseName: schedule?.course_name || schedule?.notes || '과정명 없음',
     shootingType: schedule?.shooting_type || (scheduleType === 'academy' ? '촬영' : 'PPT'),
@@ -313,21 +313,29 @@ export const UnifiedScheduleCard = ({
       return { bg: '#f0f9ff', border: '#0ea5e9', text: '#0c4a6e' };
     }
   };
-
   const cardColor = getDefaultColor();
+
+  // 🔥 촬영자 표기 폴백(우선순위: prop -> assigned_shooters -> user_profiles.name)
+  const shooterDisplayText =
+    (typeof shooterText === 'string' && shooterText.trim().length > 0
+      ? shooterText.trim()
+      : Array.isArray(schedule?.assigned_shooters) && schedule.assigned_shooters.length > 0
+        ? schedule.assigned_shooters.filter(Boolean).join(', ')
+        : (schedule?.user_profiles?.name || '')
+    ) || '';
 
   // 🔥 공통 이벤트 핸들러
   const handleClick = (e: React.MouseEvent) => {
+    // 드래그 종료 직후 클릭 방지(Studio)
     if (scheduleType === 'studio' && isDragActiveRef.current) {
       e.preventDefault();
       e.stopPropagation();
       return;
     }
 
+    // 체크박스 클릭시 카드 onClick 무시
     const target = e.target as HTMLElement;
-    const checkbox = target.closest('input[type="checkbox"]');
-    
-    if (checkbox) {
+    if (target.closest('input[type="checkbox"]')) {
       e.stopPropagation();
       return;
     }
@@ -339,19 +347,24 @@ export const UnifiedScheduleCard = ({
   // 🔥 Studio 전용 드래그 핸들러
   const handleDragStart = (e: React.DragEvent) => {
     if (scheduleType !== 'studio') return;
-    
+
     isDragActiveRef.current = true;
     const dragData = {
-      id: schedule.id,
-      shoot_date: schedule.shoot_date,
-      sub_location_id: schedule.sub_location_id,
-      professor_name: schedule.professor_name,
-      course_name: schedule.course_name,
-      start_time: schedule.start_time,
-      end_time: schedule.end_time,
-      shooting_type: schedule.shooting_type
+      id: schedule?.id,
+      shoot_date: schedule?.shoot_date,
+      sub_location_id: schedule?.sub_location_id,
+      professor_name: schedule?.professor_name,
+      course_name: schedule?.course_name,
+      start_time: schedule?.start_time,
+      end_time: schedule?.end_time,
+      shooting_type: schedule?.shooting_type
     };
-    e.dataTransfer.setData('application/json', JSON.stringify(dragData));
+    try {
+      e.dataTransfer.setData('application/json', JSON.stringify(dragData));
+    } catch {
+      // dataTransfer가 막힌 환경 대비
+      e.dataTransfer.setData('text/plain', JSON.stringify(dragData));
+    }
     e.dataTransfer.effectAllowed = 'move';
     onDragStart?.(e, schedule);
   };
@@ -403,9 +416,9 @@ export const UnifiedScheduleCard = ({
       {/* 🔥 통합스케줄 레이아웃 (showShooterInfo=true) */}
       {showShooterInfo ? (
         <>
-          {/* 첫 번째 줄: 시간 + 교수명 (체크박스 없음) */}
-          <div style={{ 
-            ...textStyles.title, // 🎯 14px
+          {/* 첫 번째 줄: 시간 + 교수명 */}
+          <div style={{
+            ...textStyles.title,
             color: cardColor.text,
             marginBottom: 4,
             display: 'flex',
@@ -416,10 +429,10 @@ export const UnifiedScheduleCard = ({
             <span style={{ color: '#9ca3af' }}>|</span>
             <span>{safeSchedule.professorName}</span>
           </div>
-          
+
           {/* 두 번째 줄: 강의명 + 촬영형식 */}
-          <div style={{ 
-            ...textStyles.subtitle, // 🎯 12px
+          <div style={{
+            ...textStyles.subtitle,
             marginBottom: 6,
             color: cardColor.text,
             display: 'flex',
@@ -435,13 +448,13 @@ export const UnifiedScheduleCard = ({
             }}>
               {safeSchedule.courseName}
             </div>
-            
+
             <span style={{
               background: shootingStyle.background,
               color: shootingStyle.color,
               padding: '2px 6px',
               borderRadius: 4,
-              ...textStyles.tiny, // 🎯 9px
+              ...textStyles.tiny,
               boxShadow: `${shootingStyle.shadow}, 0 1px 3px rgba(0, 0, 0, 0.1)`,
               border: shootingStyle.border,
               textShadow: '0 1px 1px rgba(255, 255, 255, 0.8)',
@@ -452,28 +465,30 @@ export const UnifiedScheduleCard = ({
             </span>
           </div>
 
-          {/* 세 번째 줄: 촬영자이름(근무시간) + 승인상태 */}
+          {/* 세 번째 줄: 촬영자이름(또는 미배치) + 승인상태 */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             minHeight: '16px'
           }}>
-            <div style={{ 
-              color: shooterText ? '#059669' : '#dc2626',
-              ...textStyles.body, // 🎯 11px
-              flex: 1
-            }}>
-              {shooterText || '미배치'}
+            <div
+              title={shooterDisplayText || undefined}
+              style={{
+                color: shooterDisplayText ? '#059669' : '#dc2626',
+                ...textStyles.body,
+                flex: 1
+              }}>
+              {shooterDisplayText || '미배치'}
             </div>
-            
+
             <div style={{
               backgroundColor: statusInfo.bgColor,
               color: statusInfo.color,
               border: `1px solid ${statusInfo.borderColor}`,
               borderRadius: '10px',
               padding: '2px 8px',
-              ...textStyles.tiny, // 🎯 9px
+              ...textStyles.tiny,
               flexShrink: 0
             }}>
               {statusInfo.text}
@@ -482,11 +497,11 @@ export const UnifiedScheduleCard = ({
         </>
       ) : (
         <>
-          {/* 🔥 일반 레이아웃 (showShooterInfo=false) - 학원과 스튜디오 동일 */}
-          
-          {/* 첫 번째 줄: 시간 + 교수명 + 체크박스(학원만) */}
-          <div style={{ 
-            ...textStyles.title, // 🎯 14px
+          {/* 🔥 일반 레이아웃 (학원/스튜디오 공용) */}
+
+          {/* 첫 번째 줄: 시간 + 교수명 + (학원체크박스) */}
+          <div style={{
+            ...textStyles.title,
             color: '#374151',
             marginBottom: 4,
             display: 'flex',
@@ -501,22 +516,19 @@ export const UnifiedScheduleCard = ({
             }}>
               <span>{safeSchedule.startTime}~{safeSchedule.endTime}</span>
               <span style={{ color: '#9ca3af' }}>|</span>
-              <span style={{
-                wordWrap: 'break-word',
-                wordBreak: 'break-word'
-              }}>
+              <span style={{ wordWrap: 'break-word', wordBreak: 'break-word' }}>
                 {safeSchedule.professorName}
               </span>
             </div>
-            
+
             {/* 🔥 체크박스 (일반모드 + 학원만) */}
             {scheduleType === 'academy' && showCheckbox && (
               <input
                 type="checkbox"
-                checked={isSelected}
+                checked={!!isSelected}
                 onChange={(e) => onCheckboxChange?.(e.target.checked)}
                 onClick={(e) => e.stopPropagation()}
-                style={{ 
+                style={{
                   transform: 'scale(1.1)',
                   cursor: 'pointer',
                   accentColor: '#2563eb',
@@ -527,8 +539,8 @@ export const UnifiedScheduleCard = ({
           </div>
 
           {/* 두 번째 줄: 강의명 + 촬영형식 */}
-          <div style={{ 
-            ...textStyles.subtitle, // 🎯 12px
+          <div style={{
+            ...textStyles.subtitle,
             marginBottom: 6,
             color: '#374151',
             display: 'flex',
@@ -544,13 +556,13 @@ export const UnifiedScheduleCard = ({
             }}>
               {safeSchedule.courseName}
             </div>
-            
+
             <div style={{
               background: shootingStyle.background,
               color: shootingStyle.color,
               padding: scheduleType === 'academy' ? '3px 8px' : '2px 6px',
               borderRadius: scheduleType === 'academy' ? 6 : 4,
-              ...textStyles.body, // 🎯 11px
+              ...textStyles.body,
               boxShadow: shootingStyle.shadow || '0 1px 2px rgba(0,0,0,0.1)',
               border: shootingStyle.border,
               textShadow: '0 1px 1px rgba(255, 255, 255, 0.8)',
@@ -562,28 +574,30 @@ export const UnifiedScheduleCard = ({
             </div>
           </div>
 
-          {/* 🔥 세 번째 줄: 촬영자 + 승인상태 (일반모드에도 포함) */}
+          {/* 세 번째 줄: 촬영자 + 승인상태 */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             minHeight: '18px'
           }}>
-            <div style={{ 
-              color: shooterText ? '#059669' : '#dc2626',
-              ...textStyles.body, // 🎯 11px
-              flex: 1
-            }}>
-              {shooterText || '미배치'}
+            <div
+              title={shooterDisplayText || undefined}
+              style={{
+                color: shooterDisplayText ? '#059669' : '#dc2626',
+                ...textStyles.body,
+                flex: 1
+              }}>
+              {shooterDisplayText || '미배치'}
             </div>
-            
+
             <div style={{
               backgroundColor: statusInfo.bgColor,
               color: statusInfo.color,
               border: `1px solid ${statusInfo.borderColor}`,
               borderRadius: '12px',
               padding: '2px 8px',
-              ...textStyles.meta, // 🎯 10px
+              ...textStyles.meta,
               boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
               flexShrink: 0
             }}>
@@ -606,10 +620,10 @@ export const UnifiedScheduleCard = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          ...textStyles.subtitle, // 🎯 12px
+          ...textStyles.subtitle,
           color: '#dc2626'
         }}>
-          {schedule.approval_status === 'cancelled' ? '취소됨' : '삭제됨'}
+          {schedule?.approval_status === 'cancelled' ? '취소됨' : '삭제됨'}
         </div>
       )}
     </div>

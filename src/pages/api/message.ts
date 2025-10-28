@@ -4,7 +4,7 @@ export const config = {
   runtime: 'edge',
 };
 
-const API_URL = 'https://closeapi.eduwill.net/bot/3453943/channel/c534b478-b7d2-f558-cf25-8b8d715ca38f/message';
+const API_URL = 'https://closeapi.eduwill.net/bot/10608844/channel/c534b478-b7d2-f558-cf25-8b8d715ca38f/message';
 
 export default async function handler(req: Request) {
   const headers = {

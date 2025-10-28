@@ -20,7 +20,7 @@ interface ScheduleDetail {
       name: string;
     };
   };
-  user_profiles?: {
+  users?: {
     name: string;
     shooter_type?: string;
   };

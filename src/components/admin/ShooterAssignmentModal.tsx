@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../utils/supabaseClient';
 import { Schedule, Shooter, ShootingType } from '../../types/shooter';
 
@@ -29,6 +29,7 @@ export default function ShooterAssignmentModal({
   schedule,
   onAssignmentComplete
 }: ShooterAssignmentModalProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [availableShooters, setAvailableShooters] = useState<ShooterWithAvailability[]>([]);
   const [selectedShooter, setSelectedShooter] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +39,28 @@ export default function ShooterAssignmentModal({
     showOnlyAvailable: true,
     sortBy: 'recommendation' as 'recommendation' | 'specialty' | 'workload' | 'availability'
   });
+
+ useEffect(() => {
+   if (!isOpen) return;
+   const handleKeyDown = (e: KeyboardEvent) => {
+     if (e.key === 'Escape') {
+       // preventDefault만 충분. stopPropagation은 다른 레이어와 충돌 유발 가능
+       e.preventDefault();
+       onClose?.();
+     }
+   };
+   window.addEventListener('keydown', handleKeyDown);
+   return () => window.removeEventListener('keydown', handleKeyDown);
+ }, [isOpen, onClose]);
+
+ useEffect(() => {
+   if (isOpen) {
+     // 렌더 직후 바로 래퍼에 포커스
+     containerRef.current?.focus();
+   }
+ }, [isOpen]);
+
+
 
   useEffect(() => {
     if (isOpen && schedule) {
@@ -441,20 +464,33 @@ export default function ShooterAssignmentModal({
 
   if (!isOpen || !schedule) return null;
 
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0, 0, 0, 0.8)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-      padding: '20px'
-    }}>
+    return (
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-modal="true"
+      tabIndex={-1}
+      onKeyDownCapture={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose?.();
+        }
+      }}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}
+      >
+
       <div style={{
         background: 'white',
         borderRadius: '12px',
@@ -493,7 +529,7 @@ export default function ShooterAssignmentModal({
                 {schedule.course_name}
               </div>
               <div style={{ fontSize: '14px', color: '#64748b' }}>
-                {schedule.shoot_date} • {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)} 
+                {schedule.shoot_date} • {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)} • {schedule.shooting_type}
               </div>
             </div>
             
