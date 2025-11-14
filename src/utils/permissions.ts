@@ -78,8 +78,28 @@ export const updateRolePermission = async (role: string, menuId: string, canAcce
 // utils/permissions.ts 맨 아래에 추가
 
 export const safeUserRole = (userRole: string | null | undefined): string => {
-  const validRoles = ['system_admin', 'schedule_admin', 'academy_manager', 'studio_manager', 'online_manager', 'professor', 'shooter', 'staff'];
-  return (userRole && validRoles.includes(userRole)) ? userRole : 'staff';
+  if (!userRole) {
+    return 'staff';
+  }
+
+  const normalized = userRole.toLowerCase();
+
+  if (normalized === 'studio_manager') {
+    return 'online_manager';
+  }
+
+  const validRoles = [
+    'system_admin',
+    'schedule_admin',
+    'manager',
+    'academy_manager',
+    'online_manager',
+    'professor',
+    'shooter',
+    'staff'
+  ];
+
+  return validRoles.includes(normalized) ? normalized : 'staff';
 };
 
 export const hasPermission = (userRole: string, resource: string, level: string = 'read'): boolean => {
@@ -88,7 +108,7 @@ export const hasPermission = (userRole: string, resource: string, level: string 
   
   const permissions = {
     'schedule_admin': ['user_management', 'system_settings', 'academy_schedules', 'shooting_tasks'],
-    'studio_manager': ['studio_management', 'shooting_tasks'],
+    'manager': ['user_management', 'academy_schedules', 'studio_management', 'shooting_tasks'],
     'academy_manager': ['academy_schedules'],
     'shooter': ['shooting_tasks']
   };

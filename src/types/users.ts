@@ -71,11 +71,13 @@ export interface TeamAssignment {
 }
 
 // 열거형 타입들
-export type UserRoleType = 
+export type UserRoleType =
   | 'system_admin'      // 시스템 관리자
   | 'schedule_admin'    // 스케줄 관리자
+  | 'manager'           // 일반 관리자(승인 제외)
   | 'academy_manager'   // 학원 매니저
   | 'online_manager'    // 온라인 매니저
+  | 'studio_manager'    // 스튜디오 매니저
   | 'shooter'           // 촬영자
   | 'professor'         // 교수
   | 'staff';            // 일반 직원
@@ -119,6 +121,13 @@ export const DEFAULT_PERMISSIONS: Record<UserRoleType, RolePermissions> = {
     system_settings: 'none',
     shooting_tasks: 'read'
   },
+  manager: {
+    academy_schedules: 'manage',
+    studio_schedules: 'manage',
+    user_management: 'manage',
+    system_settings: 'none',
+    shooting_tasks: 'read'
+  },
   academy_manager: {
     academy_schedules: 'assigned_only',
     studio_schedules: 'none',
@@ -127,6 +136,13 @@ export const DEFAULT_PERMISSIONS: Record<UserRoleType, RolePermissions> = {
     shooting_tasks: 'read'
   },
   online_manager: {
+    academy_schedules: 'none',
+    studio_schedules: 'admin',
+    user_management: 'assigned_only',
+    system_settings: 'none',
+    shooting_tasks: 'read'
+  },
+    studio_manager: {
     academy_schedules: 'none',
     studio_schedules: 'admin',
     user_management: 'assigned_only',
@@ -160,8 +176,10 @@ export const DEFAULT_PERMISSIONS: Record<UserRoleType, RolePermissions> = {
 export const ROLE_LABELS: Record<UserRoleType, string> = {
   system_admin: '시스템 관리자',
   schedule_admin: '스케줄 관리자',
+  manager: '일반 관리자',
   academy_manager: '학원 매니저',
   online_manager: '온라인 매니저',
+  studio_manager: '스튜디오 매니저',
   shooter: '촬영자',
   professor: '교수',
   staff: '일반 직원'
@@ -171,8 +189,10 @@ export const ROLE_LABELS: Record<UserRoleType, string> = {
 export const ROLE_COLORS: Record<UserRoleType, string> = {
   system_admin: '#dc2626',    // 빨강
   schedule_admin: '#ea580c',  // 주황
+  manager: '#f97316',         // 밝은 주황
   academy_manager: '#3b82f6', // 파랑
   online_manager: '#059669',  // 녹색
+  studio_manager: '#6366f1',  // 남색
   shooter: '#7c3aed',         // 보라
   professor: '#0891b2',       // 청록
   staff: '#6b7280'            // 회색
@@ -189,8 +209,12 @@ export const normalizeUserRole = (role: string): UserRoleType => {
       return 'academy_manager';
     case 'online_manager':
       return 'online_manager';
+    case 'studio_manager':
+      return 'studio_manager';
     case 'schedule_admin':
       return 'schedule_admin';
+    case 'manager':
+      return 'manager';
     case 'shooter':
       return 'shooter';
     case 'professor':

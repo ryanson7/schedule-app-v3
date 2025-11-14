@@ -15,7 +15,7 @@ interface AcademyScheduleModalProps {
       | 'temp'
       | 'request'
       | 'approve'
-      | 'modify_request'
+      | 'modify_request'  
       | 'cancel_request'
       | 'delete_request'
       | 'modify_approve'
@@ -28,312 +28,6 @@ interface AcademyScheduleModalProps {
       | 'approve_modification'
   ) => Promise<{ success: boolean; message: string }>;
 }
-
-/* ===============================
-   🔥 고도화된 히스토리 컴포넌트
-   =============================== */
-const EnhancedScheduleHistory = ({ scheduleId }: { scheduleId: number }) => {
-  const [scheduleHistory, setScheduleHistory] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  const fetchScheduleHistory = async (scheduleId: number) => {
-    if (!scheduleId) return;
-    setLoadingHistory(true);
-
-    try {
-      console.log('📜 학원 스케줄 히스토리 조회 시작:', scheduleId);
-
-      // 1) history
-      const { data: historyData, error: historyError } = await supabase
-        .from('schedule_history')
-        .select('*')
-        .eq('schedule_id', scheduleId)
-        .order('created_at', { ascending: false });
-      if (historyError) console.error('히스토리 조회 오류:', historyError);
-
-      // 2) schedule
-      const { data: scheduleData, error: scheduleError } = await supabase
-        .from('schedules')
-        .select('*')
-        .eq('id', scheduleId)
-        .single();
-      if (scheduleError) console.error('스케줄 데이터 조회 오류:', scheduleError);
-
-      // 3) 위치(강의실) 매핑
-      const { data: locationData } = await supabase
-        .from('sub_locations')
-        .select(`id, name, main_locations(id, name)`);
-      const locationMap = new Map<number, string>();
-      (locationData || []).forEach((loc: any) => {
-        locationMap.set(loc.id, `${loc?.main_locations?.name ?? ''} - ${loc?.name ?? ''}`);
-      });
-
-      const normalize = (value: any, type: string) => {
-        if (value === null || value === undefined || value === '') return '';
-        switch (type) {
-          case 'time':
-            return String(value).substring(0, 5);
-          case 'location':
-            return String(value);
-          case 'text':
-            return String(value).trim();
-          case 'date':
-            return String(value).substring(0, 10);
-          default:
-            return String(value);
-        }
-      };
-
-      const parseDetailedChanges = (oldData: any, newData: any) => {
-        const changes: Array<{ field: string; oldValue: any; newValue: any; displayName: string }> = [];
-        if (!oldData || !newData) {
-          return { changes: [], summary: '새로운 스케줄이 생성되었습니다.' };
-        }
-        const trackFields = [
-          { field: 'shoot_date', displayName: '촬영일', type: 'date' },
-          { field: 'start_time', displayName: '시작시간', type: 'time' },
-          { field: 'end_time', displayName: '종료시간', type: 'time' },
-          { field: 'professor_name', displayName: '교수명', type: 'text' },
-          { field: 'professor_category_name', displayName: '교수 카테고리', type: 'text' },
-          { field: 'course_name', displayName: '강의명', type: 'text' },
-          { field: 'course_code', displayName: '강의코드', type: 'text' },
-          { field: 'shooting_type', displayName: '촬영형식', type: 'text' },
-          { field: 'sub_location_id', displayName: '강의실', type: 'location' },
-          { field: 'notes', displayName: '비고', type: 'text' }
-        ];
-
-        trackFields.forEach(({ field, displayName, type }) => {
-          const ov = normalize(oldData[field], type);
-          const nv = normalize(newData[field], type);
-          if (ov !== nv && !(ov === '' && nv === '')) {
-            let formattedOld = ov || '없음';
-            let formattedNew = nv || '없음';
-            switch (type) {
-              case 'date':
-                formattedOld = ov ? new Date(oldData[field]).toLocaleDateString('ko-KR') : '미지정';
-                formattedNew = nv ? new Date(newData[field]).toLocaleDateString('ko-KR') : '미지정';
-                break;
-              case 'time':
-                formattedOld = ov || '미지정';
-                formattedNew = nv || '미지정';
-                break;
-              case 'location':
-                formattedOld = ov ? locationMap.get(parseInt(ov)) || `강의실 ${ov}` : '미지정';
-                formattedNew = nv ? locationMap.get(parseInt(nv)) || `강의실 ${nv}` : '미지정';
-                break;
-            }
-            changes.push({ field, oldValue: formattedOld, newValue: formattedNew, displayName });
-          }
-        });
-
-        let summary = '';
-        if (changes.length === 0) summary = '상태만 변경되었습니다.';
-        else if (changes.length === 1) {
-          const c = changes[0];
-          summary = `${c.displayName}이(가) "${c.oldValue}"에서 "${c.newValue}"(으)로 변경되었습니다.`;
-        } else {
-          const names = changes.map(c => c.displayName).join(', ');
-          summary = `${names} 등 ${changes.length}개 항목이 변경되었습니다.`;
-        }
-        return { changes, summary };
-      };
-
-      const getCurrentUserName = () => {
-        const userName = localStorage.getItem('userName') || localStorage.getItem('displayName');
-        const userRole = localStorage.getItem('userRole');
-        if (userRole === 'system_admin') return userName || '시스템 관리자';
-        if (userRole === 'academy_manager') return userName || '학원 매니저';
-        return userName || '관리자';
-      };
-
-      const getUserDisplayName = async (changedBy: any): Promise<string> => {
-        if (!changedBy) return getCurrentUserName();
-        if (typeof changedBy === 'string' && isNaN(Number(changedBy))) return changedBy;
-        try {
-          const { data: userData } = await supabase
-            .from('user_profiles')
-            .select('name, display_name')
-            .eq('id', changedBy)
-            .single();
-          return (userData?.display_name || userData?.name || getCurrentUserName());
-        } catch {
-          return getCurrentUserName();
-        }
-      };
-
-      const currentUserName = getCurrentUserName();
-      const historyMap = new Map<string, any>();
-
-      if (scheduleData) {
-        historyMap.set(`created_${scheduleData.id}`, {
-          id: `created_${scheduleData.id}`,
-          action: '등록됨',
-          reason: '최초 스케줄 등록',
-          changed_by: '매니저',
-          created_at: scheduleData.created_at,
-          details: `${scheduleData.professor_name} 교수님 학원 스케줄이 등록되었습니다.`,
-          changes: [],
-          source: 'system'
-        });
-
-        if (scheduleData.approval_status === 'approved') {
-          historyMap.set(`approved_${scheduleData.id}`, {
-            id: `approved_${scheduleData.id}`,
-            action: '승인완료',
-            reason: '관리자 승인 처리',
-            changed_by: currentUserName,
-            created_at: scheduleData.updated_at || scheduleData.created_at,
-            details: `${scheduleData.professor_name} 교수님 학원 스케줄이 승인 완료되었습니다.`,
-            changes: [],
-            source: 'system'
-          });
-        }
-
-        if (scheduleData.approval_status === 'cancelled') {
-          historyMap.set(`cancelled_${scheduleData.id}`, {
-            id: `cancelled_${scheduleData.id}`,
-            action: '취소완료',
-            reason: '관리자 취소 승인',
-            changed_by: currentUserName,
-            created_at: scheduleData.updated_at || scheduleData.created_at,
-            details: `${scheduleData.professor_name} 교수님 학원 스케줄이 취소 처리되었습니다.`,
-            changes: [],
-            source: 'system'
-          });
-        }
-      }
-
-      if (historyData && historyData.length > 0) {
-        const unique = historyData.reduce((acc: any[], cur: any) => {
-          const t = new Date(cur.created_at).getTime();
-          const ex = acc.find(x => Math.abs(new Date(x.created_at).getTime() - t) < 5000 && x.change_type === cur.change_type);
-          if (!ex) acc.push(cur);
-          return acc;
-        }, []);
-
-        for (const item of unique) {
-          const key = `history_${item.id}`;
-          if (!historyMap.has(key)) {
-            let actionName = item.change_type;
-            switch (item.change_type) {
-              case 'temp': actionName = '임시저장'; break;
-              case 'request': actionName = '승인요청'; break;
-              case 'approve': actionName = '승인완료'; break;
-              case 'modify_request': actionName = '수정요청'; break;
-              case 'approve_modification': actionName = '수정권한승인'; break;
-              case 'modify_approve': actionName = '수정승인완료'; break;
-              case 'cancel_request': actionName = '취소요청'; break;
-              case 'cancel_approve': actionName = '취소승인완료'; break;
-              case 'delete_request': actionName = '삭제요청'; break;
-              case 'delete_approve': actionName = '삭제승인완료'; break;
-              case 'cancel_cancel': actionName = '요청철회'; break;
-              case 'cancel_delete': actionName = '삭제요청철회'; break;
-              case 'cancel': actionName = '직접취소'; break;
-              case 'delete': actionName = '직접삭제'; break;
-            }
-
-            const changedByName = await getUserDisplayName(item.changed_by);
-            let detailsText = item.description || '';
-            let changesList: any[] = [];
-            try {
-              const oldDataParsed = item.old_value ? JSON.parse(item.old_value) : null;
-              const newDataParsed = item.new_value ? JSON.parse(item.new_value) : null;
-              if (oldDataParsed && newDataParsed) {
-                const { changes, summary } = parseDetailedChanges(oldDataParsed, newDataParsed);
-                changesList = changes;
-                if (changes.length > 0) detailsText = `${detailsText} - ${summary}`;
-              }
-            } catch (e) {
-              console.warn('히스토리 데이터 파싱 오류:', e);
-            }
-
-            historyMap.set(key, {
-              id: key,
-              action: actionName,
-              reason: item.description || '',
-              changed_by: changedByName,
-              created_at: item.created_at,
-              details: detailsText,
-              changes: changesList,
-              source: 'history'
-            });
-          }
-        }
-      }
-
-      const all = Array.from(historyMap.values()).sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setScheduleHistory(all);
-      console.log('✅ 학원 히스토리 조회 완료:', all.length, '개');
-    } catch (e) {
-      console.error('학원 히스토리 조회 오류:', e);
-      setScheduleHistory([]);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  useEffect(() => {
-    if (scheduleId) fetchScheduleHistory(scheduleId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleId]);
-
-  const historyItemStyle = (action: string) => {
-    switch (action) {
-      case "취소완료":
-      case "취소승인완료":
-      case "직접취소":
-        return { backgroundColor: "#fef2f2", borderColor: "#fecaca", padding: 12, marginBottom: 8, border: "1px solid #fecaca", borderRadius: 6 };
-      case "수정요청":
-      case "수정권한승인":
-      case "수정승인완료":
-        return { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0", padding: 12, marginBottom: 8, border: "1px solid #bbf7d0", borderRadius: 6 };
-      case "승인완료":
-      case "승인요청":
-        return { backgroundColor: "#eff6ff", borderColor: "#dbeafe", padding: 12, marginBottom: 8, border: "1px solid #dbeafe", borderRadius: 6 };
-      case "등록됨":
-        return { backgroundColor: "#fefce8", borderColor: "#fde047", padding: 12, marginBottom: 8, border: "1px solid #fde047", borderRadius: 6 };
-      default:
-        return { backgroundColor: "#f9fafb", borderColor: "#e5e7eb", padding: 12, marginBottom: 8, border: "1px solid #e5e7eb", borderRadius: 6 };
-    }
-  };
-
-  if (!scheduleId) return null;
-
-  return (
-    <div>
-      {loadingHistory ? (
-        <div style={{ textAlign: 'center', color: '#6b7280', padding: 20, fontSize: 14 }}>히스토리를 불러오는 중...</div>
-      ) : scheduleHistory.length === 0 ? (
-        <div style={{ textAlign: 'center', color: '#6b7280', padding: 20, fontSize: 14 }}>변경 이력이 없습니다.</div>
-      ) : (
-        <div style={{ maxHeight: '100%', overflowY: 'auto' }}>
-          {scheduleHistory.map(item => (
-            <div key={item.id} style={historyItemStyle(item.action)}>
-              <p style={{ margin: '0 0 6px 0', fontWeight: 'bold', fontSize: 14 }}>{item.action}</p>
-              <p style={{ margin: '0 0 4px 0', fontSize: 12, color: '#6b7280' }}>{new Date(item.created_at).toLocaleString()}</p>
-              <p style={{ margin: '0 0 6px 0', fontSize: 12 }}>처리자: {item.changed_by}</p>
-
-              {item.changes && item.changes.length > 0 && (
-                <div style={{ marginBottom: 8, padding: 8, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 4, fontSize: 12 }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: 4, color: '#374151' }}>📝 변경 내용:</div>
-                  {item.changes.map((change: any, idx: number) => (
-                    <div key={idx} style={{ marginBottom: 2, color: '#4b5563', lineHeight: 1.4 }}>
-                      • <strong>{change.displayName}:</strong> {change.oldValue} → {change.newValue}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>{item.details}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 /* ======================
    🔥 사유 입력 모달
@@ -404,9 +98,148 @@ export default function AcademyScheduleModal({
   const [userIdLoading, setUserIdLoading] = useState(true);
   const [reasonModalOpen, setReasonModalOpen] = useState(false);
   const [requestType, setRequestType] = useState<'modify' | 'cancel' | 'delete'>('modify');
+  
 
   const [availableLocations, setAvailableLocations] = useState<any[]>([]);
   const [locationLoading, setLocationLoading] = useState(false);
+
+  // 🔥 스튜디오 모달과 동일한 히스토리 상태
+  const [scheduleHistory, setScheduleHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+
+  // 🔥 시간 포맷 (히스토리용)
+  const formatDateTime = (dateTime: string) => {
+    return new Date(dateTime).toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+
+const fetchScheduleHistory = async (scheduleId: number) => {
+  if (!scheduleId) return;
+
+  setHistoryLoading(true);
+  
+  try {
+    console.log('학원 히스토리 조회 시작:', scheduleId);
+
+    const { data: historyData, error: historyError } = await supabase
+      .from('schedule_history')
+      .select('*')
+      .eq('schedule_id', scheduleId)
+      .order('created_at', { ascending: false });
+
+    if (historyError) {
+      console.error('히스토리 조회 오류:', historyError);
+    }
+
+    const { data: scheduleData, error: scheduleError } = await supabase
+      .from('schedules')
+      .select('*')
+      .eq('id', scheduleId)
+      .single();
+
+    if (scheduleError) {
+      console.error('스케줄 데이터 조회 오류:', scheduleError);
+    }
+
+    // 🔥 1. 모든 changed_by ID 수집
+    const allUserIds = new Set<number>();
+    
+    if (historyData) {
+      historyData.forEach(h => {
+        if (typeof h.changed_by === 'number') {
+          allUserIds.add(h.changed_by);
+        }
+      });
+    }
+
+    // 🔥 2. users 테이블에서 한 번에 조회
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, name')
+      .in('id', Array.from(allUserIds));
+
+    const userMap = new Map(users?.map(u => [u.id, u.name]) || []);
+    
+    console.log('👥 사용자 매핑:', userMap);
+
+    // 🔥 3. getUserDisplayName 함수
+    const getUserDisplayName = (changedBy: any): string => {
+      if (!changedBy) return '담당자 정보 없음';
+      
+      if (typeof changedBy === 'number') {
+        return userMap.get(changedBy) || `ID: ${changedBy}`;
+      }
+      
+      if (typeof changedBy === 'string' && !isNaN(Number(changedBy))) {
+        const userId = Number(changedBy);
+        return userMap.get(userId) || `ID: ${changedBy}`;
+      }
+      
+      return changedBy;
+    };
+
+    const historyMap = new Map<string, any>();
+
+    // 시스템 히스토리 추가 (등록됨)
+    if (scheduleData) {
+      const createdHistory = historyData?.find(h => h.change_type === 'created');
+      
+      if (createdHistory) {
+        const creatorName = getUserDisplayName(createdHistory.changed_by);
+
+        historyMap.set(`created_${scheduleData.id}`, {
+          id: `created_${scheduleData.id}`,
+          action: '등록됨',
+          reason: '최초 스케줄 등록',
+          changed_by: creatorName,
+          created_at: scheduleData.created_at,
+          details: `${scheduleData.professor_name} 교수님 스케줄 등록`,
+          source: 'system'
+        });
+      }
+    }
+
+    // schedule_history 데이터 병합
+    if (historyData && historyData.length > 0) {
+      historyData.forEach(item => {
+        const userName = getUserDisplayName(item.changed_by);
+
+        historyMap.set(item.id.toString(), {
+          id: item.id.toString(),
+          action: item.change_type === 'approved' || item.change_type === 'approve' ? '승인완료' :
+                  item.change_type === 'cancelled' ? '취소완료' :
+                  item.change_type.toLowerCase() === 'update' ? '수정됨' :
+                  item.change_type === 'created' ? '등록됨' : '처리됨',
+          reason: item.description || '-',
+          changed_by: userName,
+          created_at: item.created_at,
+          details: item.description || '',
+          source: 'history'
+        });
+      });
+    }
+
+    const essentialHistory = Array.from(historyMap.values())
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    setScheduleHistory(essentialHistory);
+    console.log('학원 히스토리 조회 완료:', essentialHistory.length, '개');
+
+  } catch (error) {
+    console.error('히스토리 조회 오류:', error);
+    setScheduleHistory([]);
+  } finally {
+    setHistoryLoading(false);
+  }
+};
 
   // 🔥 사용자 ID 조회
   useEffect(() => {
@@ -529,12 +362,12 @@ export default function AcademyScheduleModal({
       return `${h.padStart(2, '0')}:${(m ?? '00').padStart(2, '0')}`;
     }
     return s;
-    };
+  };
 
   const getInitialFormData = () => {
     const scheduleData = initialData?.scheduleData;
-    const isEditMode = !!(scheduleData && scheduleData.id);
-    if (isEditMode) {
+    const isEditModeLocal = !!(scheduleData && scheduleData.id);
+    if (isEditModeLocal) {
       return {
         shoot_date: getInitValue(scheduleData.shoot_date || initialData.date),
         start_time: formatTimeForInput(scheduleData.start_time),
@@ -545,7 +378,6 @@ export default function AcademyScheduleModal({
         shooting_type: getInitValue(scheduleData.shooting_type || '촬영'),
         notes: getInitValue(scheduleData.notes),
         sub_location_id: getInitValue(scheduleData.sub_location_id || initialData.locationId),
-        // ✅ 추가: 저장값 복원용
         professor_category_name: getInitValue(scheduleData.professor_category_name),
         professor_category_id: scheduleData.professor_category_id ?? null
       };
@@ -560,7 +392,6 @@ export default function AcademyScheduleModal({
       shooting_type: '촬영',
       notes: '',
       sub_location_id: getInitValue(initialData?.locationId),
-      // ✅ 추가: 신규 기본값
       professor_category_name: '',
       professor_category_id: null
     };
@@ -612,19 +443,30 @@ export default function AcademyScheduleModal({
       setMessage('');
       setUserIdLoading(true);
       setSelectedProfessorInfo(null);
+      setScheduleHistory([]);
     }
   }, [open]);
 
   useEffect(() => {
     const newFormData = getInitialFormData();
     setFormData(newFormData);
-    // 기존 저장값에 따라 배지 복원은 위 useEffect에서 처리
     console.log('🔧 모달 데이터 변경됨 - 폼 데이터 업데이트:', {
       currentStatus: initialData?.scheduleData?.approval_status,
       newFormData
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData?.scheduleData?.approval_status]);
+
+  // 🔥 히스토리 로딩 트리거 (스튜디오와 동일 패턴)
+  const isEditMode = !!(initialData?.scheduleData && initialData.scheduleData.id);
+  useEffect(() => {
+  if (isEditMode && initialData?.scheduleData?.id && open) {
+    fetchScheduleHistory(initialData.scheduleData.id);
+  } else {
+    setScheduleHistory([]);
+  }
+}, [isEditMode, initialData?.scheduleData?.id, open]);
+
 
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
@@ -654,7 +496,6 @@ export default function AcademyScheduleModal({
   };
   const permissions = getUserPermissions();
 
-  const isEditMode = !!(initialData?.scheduleData && initialData.scheduleData.id);
   const scheduleData = initialData?.scheduleData || null;
   const currentStatus = scheduleData?.approval_status || 'pending';
   const isInactive = scheduleData?.is_active === false;
@@ -699,56 +540,97 @@ export default function AcademyScheduleModal({
     );
   };
 
-  // 🔥 저장
-  const handleSave = async (action: string, reason?: string) => {
-    if (userIdLoading) {
-      setMessage('사용자 정보를 확인하는 중입니다. 잠시만 기다려주세요.');
-      return;
+// 🔥 저장
+const handleSave = async (action: string, reason?: string) => {
+  if (userIdLoading) {
+    setMessage('사용자 정보를 확인하는 중입니다. 잠시만 기다려주세요.');
+    return;
+  }
+  if (!currentUserId) {
+    setMessage('사용자 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요.');
+    return;
+  }
+
+  setSaving(true);
+  setMessage('');
+
+  try {
+    const emptyFields = validateFieldsForAction(action);
+    if (emptyFields.length > 0) {
+      const names = emptyFields.map(f => f.label).join(', ');
+      throw new Error(`다음 필수 필드를 입력해주세요: ${names}`);
     }
-    if (!currentUserId) {
-      setMessage('사용자 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요.');
-      return;
+
+    // ✅ 현재 로그인한 담당자 이름
+    const currentUserName =
+      localStorage.getItem('userName') ||
+      localStorage.getItem('displayName') ||
+      '';
+
+    // ✅ 액션별로 schedules 테이블에 들어갈 담당자 정보 세팅
+    const userMeta: any = {};
+
+    // 신규 등록 or 최초 승인 시 → 등록자 정보
+    if (!isEditMode && ['temp', 'request', 'approve'].includes(action)) {
+      userMeta.created_by_id = currentUserId;
+      userMeta.created_by_name = currentUserName;
     }
 
-    setSaving(true);
-    setMessage('');
-
-    try {
-      const emptyFields = validateFieldsForAction(action);
-      if (emptyFields.length > 0) {
-        const names = emptyFields.map(f => f.label).join(', ');
-        throw new Error(`다음 필수 필드를 입력해주세요: ${names}`);
-      }
-
-      const formDataWithUser = {
-        ...formData,
-        currentUserId: currentUserId,
-        reason: reason || '',
-        // ✅ 수정됨: 편집 모드면 id 포함해 업데이트로 처리되게 함
-        schedule_id: initialData?.scheduleData?.id || null,
-        // ✅ 선택된 교수 카테고리(자동완성에서 받은 값)가 있으면 함께 저장
-        professor_category_name: selectedProfessorInfo?.category_name || null,
-        professor_category_id: selectedProfessorInfo?.id || null,
-      };
-
-      console.log('💾 저장 시도:', { action, currentUserId, formDataWithUser });
-      const result = await onSave(formDataWithUser, action as any);
-      setMessage(result.message);
-
-      if (result.success) {
-        alert(result.message);
-        onClose();
-        setMessage('');
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : '처리 중 오류가 발생했습니다.';
-      setMessage(msg);
-      alert(msg);
-      console.error('저장 오류:', e);
-    } finally {
-      setSaving(false);
+    // 승인 관련 액션 → 승인자 정보
+    if (['approve', 'modify_approve', 'approve_modification'].includes(action)) {
+      userMeta.approved_by_id = currentUserId;
+      userMeta.approved_by_name = currentUserName;
     }
-  };
+
+    // 취소 관련 액션 → 취소 처리자 정보
+    if (['cancel', 'cancel_approve'].includes(action)) {
+      userMeta.cancelled_by_id = currentUserId;
+      userMeta.cancelled_by_name = currentUserName;
+    }
+
+    // 삭제 관련 액션 → 삭제 처리자 정보(필요하다면)
+    if (['delete', 'delete_approve'].includes(action)) {
+      userMeta.deleted_by_id = currentUserId;
+      userMeta.deleted_by_name = currentUserName;
+    }
+
+    const formDataWithUser = {
+      ...formData,
+
+      // ✅ 히스토리용 처리자 정보 (schedule_history용)
+      changed_by: currentUserId,
+      changed_by_name: currentUserName,
+
+      // ✅ schedules 담당자 메타 정보
+      ...userMeta,
+
+      // 기존 필드들 유지
+      currentUserId: currentUserId,
+      reason: reason || '',
+      schedule_id: initialData?.scheduleData?.id || null,
+      professor_category_name: selectedProfessorInfo?.category_name || null,
+      professor_category_id: selectedProfessorInfo?.id || null,
+    };
+
+    console.log('💾 저장 시도:', { action, currentUserId, formDataWithUser });
+    const result = await onSave(formDataWithUser, action as any);
+    setMessage(result.message);
+
+    if (result.success) {
+      alert(result.message);
+      onClose();
+      setMessage('');
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '처리 중 오류가 발생했습니다.';
+    setMessage(msg);
+    alert(msg);
+    console.error('저장 오류:', e);
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   const handleRequestWithReason = (reason: string) => {
     setReasonModalOpen(false);
@@ -1211,14 +1093,119 @@ export default function AcademyScheduleModal({
               </div>
             </div>
 
-            {/* 우측 이력 */}
+            {/* 우측 이력 - 스튜디오 모달과 동일 구조 */}
             <div style={{ flex: '0 0 50%', display: 'flex', flexDirection: 'column', backgroundColor: '#f8fafc' }}>
-              <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
+              <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold', color: '#374151' }}>처리 이력</h3>
+                {scheduleHistory.length > 0 && (
+                  <span style={{
+                    fontSize: 10,
+                    backgroundColor: '#e5e7eb',
+                    color: '#6b7280',
+                    padding: '2px 6px',
+                    borderRadius: 999
+                  }}>
+                    {scheduleHistory.length}
+                  </span>
+                )}
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
                 {isEditMode && initialData?.scheduleData?.id ? (
-                  <EnhancedScheduleHistory scheduleId={initialData.scheduleData.id} />
+                  loadingHistory ? (
+                    <div style={{
+                      padding: '16px',
+                      textAlign: 'center',
+                      color: '#6b7280',
+                      fontSize: '12px'
+                    }}>
+                      <div style={{
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid #e5e7eb',
+                        borderTop: '2px solid #3b82f6',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                        margin: '0 auto 6px'
+                      }} />
+                      히스토리를 불러오는 중...
+                    </div>
+                  ) : scheduleHistory.length === 0 ? (
+                    <div style={{
+                      padding: '16px',
+                      textAlign: 'center',
+                      color: '#9ca3af',
+                      fontSize: '12px',
+                      backgroundColor: '#f9fafb',
+                      borderRadius: '6px',
+                      border: '1px dashed #d1d5db'
+                    }}>
+                      변경 기록이 없습니다
+                    </div>
+                  ) : (
+                    <div style={{ flex: 1, paddingRight: '6px' }}>
+                      {scheduleHistory.map((historyItem, index) => (
+                        <div key={historyItem.id || index} style={{
+                          padding: '10px',
+                          borderBottom: index < scheduleHistory.length - 1 ? '1px solid #e5e7eb' : 'none',
+                          backgroundColor: index % 2 === 0 ? 'white' : '#f9fafb'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            marginBottom: '6px'
+                          }}>
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight:
+                                historyItem.action === '승인완료' || historyItem.action === '수정' ||
+                                  historyItem.action === '관리자수정' ? 'bold' :
+                                  historyItem.action === '등록됨' || historyItem.action === '수정요청' ||
+                                    historyItem.action === '취소요청' ? '600' : 'normal',
+                              color: '#374151'
+                            }}>
+                              {historyItem.action}
+                            </span>
+                            <span style={{
+                              fontSize: '10px',
+                              color: '#6b7280'
+                            }}>
+                              {formatDateTime(historyItem.created_at)}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '11px', lineHeight: '1.3' }}>
+                            <div style={{ marginBottom: '3px' }}>
+                              <span style={{ fontWeight: '500', color: '#374151' }}>
+                                {historyItem.action && String(historyItem.action).includes('요청') ? '요청자:' : '처리자:'}
+                              </span>
+                              <span style={{ marginLeft: '6px', color: '#6b7280' }}>
+                                {historyItem.changed_by}
+                              </span>
+                            </div>
+
+                            <div style={{ marginBottom: '3px' }}>
+                              <span style={{ fontWeight: '500', color: '#374151' }}>사유:</span>
+                              <span style={{ marginLeft: '6px', color: '#6b7280' }}>
+                                {historyItem.reason}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span style={{ fontWeight: '500', color: '#374151' }}>세부:</span>
+                              <span style={{
+                                marginLeft: '6px',
+                                color: '#6b7280',
+                                whiteSpace: 'pre-line'
+                              }}>
+                                {historyItem.details || '상세 정보 없음'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
                 ) : (
                   <div style={{ textAlign: 'center', color: '#6b7280', fontSize: 14, padding: '40px 20px' }}>
                     스케줄 저장 후 처리 이력이 표시됩니다.

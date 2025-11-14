@@ -39,7 +39,7 @@ export default function MembersOverviewPage() {
     const role = localStorage.getItem('userRole');
     setUserRole(role || '');
     
-    if (!['system_admin', 'schedule_admin'].includes(role || '')) {
+    if (!['system_admin', 'schedule_admin', 'manager'].includes(role || '')) {
       if (role === 'academy_manager') {
         router.replace('/academy-schedules');
         return;
@@ -79,7 +79,7 @@ export default function MembersOverviewPage() {
     const { data: allUsers, error } = await supabase
       .from('users')
       .select('role, is_active, created_at')
-      .in('role', ['system_admin', 'schedule_admin', 'academy_manager', 'online_manager', 'professor', 'shooter']);
+      .in('role', ['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager', 'professor', 'shooter']);
 
     if (error) throw error;
 
@@ -117,7 +117,7 @@ export default function MembersOverviewPage() {
     const { data: users, error } = await supabase
       .from('users')
       .select('role, is_active, created_at')
-      .in('role', ['system_admin', 'schedule_admin', 'academy_manager', 'online_manager', 'professor', 'shooter']);
+      .in('role', ['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager', 'professor', 'shooter']);
 
     if (error) throw error;
 
@@ -151,7 +151,7 @@ export default function MembersOverviewPage() {
     const { data: recentUsers, error } = await supabase
       .from('users')
       .select('id, name, email, role, created_at, updated_at, is_active')
-      .in('role', ['system_admin', 'schedule_admin', 'academy_manager', 'online_manager', 'professor', 'shooter'])
+      .in('role', ['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager', 'professor', 'shooter'])
       .order('updated_at', { ascending: false })
       .limit(15);
 

@@ -126,6 +126,7 @@ export const getRoleMainMenus = () => {
   return {
     'system_admin': '모든 메뉴 접근 가능',
     'schedule_admin': '권한관리, 관리자관리 제외한 거의 모든 메뉴',
+    'manager': '스케줄/통계 전반 관리 (승인 기능 제외)',
     'academy_manager': ['academy-schedules', 'settings.profile'],
     'online_manager': ['ManagerStudioSchedulePage', 'settings.profile'], 
     'shooter': [

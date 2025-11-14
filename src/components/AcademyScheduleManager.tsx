@@ -1,3 +1,4 @@
+//src/components/AcademyScheduleManager.tsx
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../utils/supabaseClient";
@@ -6,6 +7,7 @@ import AcademyScheduleModal from "./modals/AcademyScheduleModal";
 import { useWeek } from "../contexts/WeekContext";
 import { UnifiedScheduleCard } from "./cards/UnifiedScheduleCard";
 import { ScheduleCardErrorBoundary } from "./ErrorBoundary";
+import { canApprove, canRequestOnly, AppRole } from '../core/permissions';
 
 // 🔥 기존 학원별 색상 정의 완전 유지
 const academyColors: Record<number, { bg: string; border: string; text: string }> = {
@@ -453,7 +455,7 @@ const fetchSchedules = useCallback(async (
   };
 
 // 파일: src/components/AcademyScheduleManager.tsx
-// 기존 handleSave 전부 교체
+
 const handleSave = async (
   payload: any,
   action:
@@ -473,10 +475,10 @@ const handleSave = async (
     | 'approve_modification'
 ) => {
   try {
-    // 1) 상태 매핑
     const toHHMMSS = (t: string) =>
       t && t.length === 5 ? `${t}:00` : (t || '');
 
+    // 1) 액션 → 상태 매핑
     const statusMap: Record<string, { approval_status?: string; is_active?: boolean }> = {
       temp: { approval_status: 'pending', is_active: true },
       request: { approval_status: 'approval_requested', is_active: true },
@@ -490,46 +492,82 @@ const handleSave = async (
       delete_approve: { approval_status: 'deleted', is_active: false },
       cancel: { approval_status: 'cancelled', is_active: false },
       delete: { approval_status: 'deleted', is_active: false },
-      cancel_cancel: {}, // 요청 철회는 상태 유지(사유만 히스토리에 남김)
-      cancel_delete: {},
+      cancel_cancel: {},      // 요청 철회
+      cancel_delete: {},      // 요청 철회
     };
-
     const status = statusMap[action] || {};
 
-    // 2) 저장 대상 레코드 구성
-    const scheduleId = payload.schedule_id || payload.id || payload?.scheduleData?.id || null;
+    // 2) 모달에서 넘어온 것들 분해
+    const {
+      currentUserId,
+      changed_by,
+      changed_by_name,
 
+      professor_category_name,
+      professor_category_id,
+
+      reason,
+      schedule_id,
+      id,
+
+      // 나머지 폼 필드들
+      ...rest
+    } = payload;
+
+    const scheduleId =
+      schedule_id || id || payload?.scheduleData?.id || null;
+
+    // 3) schedules에 저장할 기본 레코드
     const record: any = {
-      // 필수/공통
       schedule_type: 'academy',
-      shoot_date: payload.shoot_date,
-      start_time: toHHMMSS(payload.start_time),
-      end_time: toHHMMSS(payload.end_time),
-      professor_name: payload.professor_name || '',
-      course_name: payload.course_name || '',
-      course_code: payload.course_code || '',
-      shooting_type: payload.shooting_type || '촬영',
-      sub_location_id: Number(payload.sub_location_id),
-      notes: payload.notes || '',
-      // 상태
+      shoot_date: rest.shoot_date,
+      start_time: toHHMMSS(rest.start_time),
+      end_time: toHHMMSS(rest.end_time),
+      professor_name: rest.professor_name || '',
+      course_name: rest.course_name || '',
+      course_code: rest.course_code || '',
+      shooting_type: rest.shooting_type || '촬영',
+      sub_location_id: Number(rest.sub_location_id),
+      notes: rest.notes || '',
       ...(status.approval_status ? { approval_status: status.approval_status } : {}),
       ...(typeof status.is_active === 'boolean' ? { is_active: status.is_active } : {}),
     };
 
-    // 3) (선택) 교수 카테고리 저장 — 이미 컬럼 만들어두셨다면 함께 기록
-    //    payload.professor_category_name / professor_category_id 가 오면 같이 저장
-    if (payload.professor_category_name) record.professor_category_name = payload.professor_category_name;
-    if (payload.professor_category_id) record.professor_category_id = payload.professor_category_id;
+    // 3-1) 교수 카테고리
+    if (professor_category_name) record.professor_category_name = professor_category_name;
+    if (professor_category_id) record.professor_category_id = professor_category_id;
 
-    // 4) 승인/요청/취소/삭제 사유 필드 (있을 때만)
-    if (action === 'modify_request' && payload.reason) record.modification_reason = payload.reason;
-    if (action === 'cancel_request' && payload.reason) record.cancellation_reason = payload.reason;
-    if (action === 'delete_request' && payload.reason) record.deletion_reason = payload.reason;
+    // 3-2) 액션별 사유 컬럼
+    if (action === 'modify_request' && reason) {
+      record.modification_reason = reason;
+    }
+    if (action === 'cancel_request' && reason) {
+      record.cancellation_reason = reason;
+    }
+    if (action === 'delete_request' && reason) {
+      record.deletion_reason = reason;
+    }
 
-    // 5) DB 쓰기 (insert or update)
+    // 3-3) 요청자 / 승인자 (DB에 실제 있는 컬럼만 사용)
+    // schedules 테이블에 requested_by, approved_by 가 이미 존재
+    if (currentUserId) {
+      // 승인/변경/취소/삭제 "요청"은 requested_by에 기록
+      if (['request', 'modify_request', 'cancel_request', 'delete_request'].includes(action)) {
+        record.requested_by = currentUserId;
+      }
+
+      // 관리자 "승인/처리" 계열은 approved_by에 기록
+      if (
+        ['approve', 'modify_approve', 'approve_modification', 'cancel_approve', 'delete_approve', 'cancel', 'delete']
+          .includes(action)
+      ) {
+        record.approved_by = currentUserId;
+      }
+    }
+
+    // 4) DB 쓰기 (insert / update)
     let dbRes;
     if (scheduleId) {
-      // update
       dbRes = await supabase
         .from('schedules')
         .update(record)
@@ -537,10 +575,9 @@ const handleSave = async (
         .select()
         .single();
     } else {
-      // insert
       dbRes = await supabase
         .from('schedules')
-        .insert({ ...record })
+        .insert(record)
         .select()
         .single();
     }
@@ -553,14 +590,17 @@ const handleSave = async (
     const saved = dbRes.data;
     const finalId = saved?.id;
 
-    // 6) 히스토리 기록
-    //    old/new 값을 넣고 싶으면 저장 전 select로 old를 가져와 diff 작성도 가능.
+    // 5) schedule_history 기록
     const historyPayload: any = {
       schedule_id: finalId,
       change_type: action,
-      description: payload.reason || '',
-      changed_by: payload.currentUserId || null,
-      old_value: null, // 필요시 채우기
+      description: reason || '',
+      changed_by: changed_by || currentUserId || null,
+      changed_by_name:
+        changed_by_name ||
+        (typeof window !== 'undefined' && (localStorage.getItem('userName') || localStorage.getItem('displayName'))) ||
+        '',
+      old_value: null,
       new_value: JSON.stringify(saved || {}),
     };
 
@@ -572,7 +612,7 @@ const handleSave = async (
       console.warn('⚠️ 히스토리 기록 실패(스케줄은 저장됨):', histRes.error);
     }
 
-    // 7) 화면 갱신
+    // 6) 화면 갱신
     await fetchSchedules();
 
     return { success: true, message: '저장되었습니다.' };
@@ -582,14 +622,11 @@ const handleSave = async (
   }
 };
 
-
-  const handleDelete = async (id: number) => {
-    await fetchSchedules();
-  };
-
   const getScheduleForCell = (date: string, location: any) => {
     try {
-      return schedules.filter(s => s.shoot_date === date && s.sub_location_id === location.id);
+      return schedules.filter(
+        (s) => s.shoot_date === date && s.sub_location_id === location.id
+      );
     } catch {
       return [];
     }
@@ -817,7 +854,6 @@ const handleSave = async (
           mainLocations={modalData?.mainLocations || []}
           userRole={userRole}
           onSave={handleSave}
-          onDelete={handleDelete}
         />
       )}
     </>

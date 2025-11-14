@@ -59,6 +59,22 @@ const safeLocalStorage = {
   }
 };
 
+const resolveAdminEquivalentRole = (role: UserRoleType): UserRoleType =>
+  role === 'manager' ? 'schedule_admin' : role;
+
+const matchesAllowedRole = (allowedRoles: UserRoleType[], role: UserRoleType): boolean => {
+  if (allowedRoles.includes(role)) {
+    return true;
+  }
+
+  if (role === 'manager') {
+    return allowedRoles.includes('schedule_admin');
+  }
+
+  return false;
+};
+
+
 // 🔥 동적 데이터 저장소 (SSR 호환)
 class DynamicPermissionManager {
   private pages: Map<string, DynamicPage> = new Map();
@@ -153,7 +169,9 @@ class DynamicPermissionManager {
   public isMenuVisible(userRole: UserRoleType, pagePath: string): boolean {
     this.ensureInitialized();
     
-    const roleHiddenMenus = this.hiddenMenus.get(userRole);
+    const roleHiddenMenus =
+      this.hiddenMenus.get(userRole) ||
+      this.hiddenMenus.get(resolveAdminEquivalentRole(userRole));
     if (!roleHiddenMenus) return true;
     
     return !roleHiddenMenus.has(pagePath);
@@ -246,6 +264,15 @@ class DynamicPermissionManager {
           isActive: true,
           customPages: []
         }],
+        ['manager', {
+          id: 'manager',
+          name: '일반 관리자',
+          color: '#f97316',
+          permissions: ['dashboard.view', 'schedules.manage', 'members.manage', 'professors.manage'],
+          level: 75,
+          isActive: true,
+          customPages: []
+        }],
         ['academy_manager', {
           id: 'academy_manager',
           name: '학원 매니저',
@@ -314,7 +341,7 @@ class DynamicPermissionManager {
           icon: '🏠',
           category: '기본',
           requiredPermissions: [],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -325,7 +352,7 @@ class DynamicPermissionManager {
           icon: '📊',
           category: '관리',
           requiredPermissions: ['dashboard.view'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -338,7 +365,7 @@ class DynamicPermissionManager {
           icon: '📅',
           category: '스케줄',
           requiredPermissions: ['schedules.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -349,7 +376,7 @@ class DynamicPermissionManager {
           icon: '📈',
           category: '스케줄',
           requiredPermissions: ['schedules.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'schedules',
           order: order++
@@ -361,7 +388,7 @@ class DynamicPermissionManager {
           icon: '🏫',
           category: '스케줄',
           requiredPermissions: ['academy.schedules'],
-          allowedRoles: ['system_admin', 'schedule_admin', 'academy_manager'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager', 'academy_manager'],
           isActive: true,
           parentId: 'schedules',
           order: order++
@@ -373,7 +400,7 @@ class DynamicPermissionManager {
           icon: '🎬',
           category: '스케줄',
           requiredPermissions: ['schedules.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'schedules',
           order: order++
@@ -385,7 +412,7 @@ class DynamicPermissionManager {
           icon: '💼',
           category: '스케줄',
           requiredPermissions: ['schedules.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'schedules',
           order: order++
@@ -397,7 +424,7 @@ class DynamicPermissionManager {
           icon: '🎭',
           category: '스케줄',
           requiredPermissions: ['schedules.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'schedules',
           order: order++
@@ -409,7 +436,7 @@ class DynamicPermissionManager {
           icon: '🌐',
           category: '스케줄',
           requiredPermissions: ['studio.schedules'],
-          allowedRoles: ['system_admin', 'schedule_admin', 'online_manager'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager', 'online_manager'],
           isActive: true,
           parentId: 'schedules',
           order: order++
@@ -423,7 +450,7 @@ class DynamicPermissionManager {
           icon: '👥',
           category: '관리',
           requiredPermissions: ['members.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -458,7 +485,7 @@ class DynamicPermissionManager {
           icon: '🎯',
           category: '관리',
           requiredPermissions: ['members.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'members',
           order: order++
@@ -470,7 +497,7 @@ class DynamicPermissionManager {
           icon: '📷',
           category: '관리',
           requiredPermissions: ['members.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'members',
           order: order++
@@ -484,7 +511,7 @@ class DynamicPermissionManager {
           icon: '🎓',
           category: '관리',
           requiredPermissions: ['professors.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -495,7 +522,7 @@ class DynamicPermissionManager {
           icon: '🏷️',
           category: '관리',
           requiredPermissions: ['professors.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           parentId: 'professors',
           order: order++
@@ -509,7 +536,7 @@ class DynamicPermissionManager {
           icon: '📷',
           category: '촬영',
           requiredPermissions: ['shooter.dashboard'],
-          allowedRoles: ['shooter', 'system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -553,7 +580,7 @@ class DynamicPermissionManager {
           icon: '📋',
           category: '촬영',
           requiredPermissions: ['shooter.view'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -564,7 +591,7 @@ class DynamicPermissionManager {
           icon: '📊',
           category: '관리',
           requiredPermissions: ['members.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -575,7 +602,7 @@ class DynamicPermissionManager {
           icon: '📢',
           category: '관리',
           requiredPermissions: ['shooter.view'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -676,7 +703,7 @@ class DynamicPermissionManager {
           icon: '📝',
           category: '스케줄',
           requiredPermissions: ['schedules.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -687,7 +714,7 @@ class DynamicPermissionManager {
           icon: '🔲',
           category: '시스템',
           requiredPermissions: ['qr.manage'],
-          allowedRoles: ['system_admin', 'schedule_admin'],
+          allowedRoles: ['system_admin', 'schedule_admin', 'manager'],
           isActive: true,
           order: order++
         },
@@ -911,10 +938,12 @@ class DynamicPermissionManager {
   public getUserMenus(userRole: UserRoleType): DynamicPage[] {
     this.ensureInitialized();
     
+    const normalizedRole = resolveAdminEquivalentRole(userRole);
+
     const allPages = Array.from(this.pages.values())
       .filter(page => {
         // 1. 역할 권한 체크
-        if (!page.allowedRoles.includes(userRole) && userRole !== 'system_admin') {
+        if (!matchesAllowedRole(page.allowedRoles, userRole) && normalizedRole !== 'system_admin') {
           return false;
         }
         
@@ -943,7 +972,10 @@ class DynamicPermissionManager {
       return this.getBasicAccess(userRole, pagePath);
     }
     
-    const role = this.roles.get(userRole);
+    const normalizedRole = resolveAdminEquivalentRole(userRole);
+    const role = this.roles.get(normalizedRole);
+
+  
     if (!role || !role.isActive) return false;
 
     // 슈퍼 권한
@@ -953,10 +985,10 @@ class DynamicPermissionManager {
     if (!page || !page.isActive) return false;
 
     // 역할 체크
-    if (!page.allowedRoles.includes(userRole)) return false;
+    if (!matchesAllowedRole(page.allowedRoles, userRole)) return false;
 
     // 권한 체크
-    return page.requiredPermissions.length === 0 || 
+    return page.requiredPermissions.length === 0 ||
       page.requiredPermissions.some(reqPerm => role.permissions.includes(reqPerm));
   }
 
@@ -964,6 +996,7 @@ class DynamicPermissionManager {
     const basicPermissions: Record<UserRoleType, string[]> = {
       system_admin: ['*'],
       schedule_admin: ['/admin', '/schedules', '/admin/members', '/admin/professors'],
+      manager: ['/admin', '/schedules', '/admin/members', '/admin/professors'],
       academy_manager: ['/academy-schedules'],
       online_manager: ['/ManagerStudioSchedulePage'],
       professor: ['/professor/login', '/settings/profile'],

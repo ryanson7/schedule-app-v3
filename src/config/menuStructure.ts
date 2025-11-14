@@ -1,67 +1,181 @@
-// utils/menuStructure.ts - 폴더화된 메뉴 구조
-export const MENU_CATEGORIES = {
-  HOME: {
-    id: 'home',
-    name: '홈',
-    path: '/',
-    icon: 'Home',
-    order: 1,
-    type: 'single' // 단일 메뉴
-  },
-  
-  ADMIN: {
-    id: 'admin',
+// config/menuStructure.ts
+export interface MenuItem {
+  id: string;
+  name: string;
+  path?: string;
+  parent?: string;
+  order: number;
+  roles: string[];
+  children?: MenuItem[];
+  icon?: string;
+}
+
+export const MENU_STRUCTURE: MenuItem[] = [
+  // 🏛️ 관리자 섹션 (상위 폴더)
+  {
+    id: 'admin-section',
     name: '관리자',
-    icon: 'Settings',
+    order: 1,
+    roles: ['system_admin', 'schedule_admin'],
+    children: [
+      {
+        id: 'dashboard',
+        name: '대시보드',
+        path: '/admin',
+        order: 1,
+        roles: ['system_admin', 'schedule_admin']
+      },
+      {
+        id: 'members',
+        name: '멤버 관리',
+        order: 2,
+        roles: ['system_admin', 'schedule_admin'],
+        children: [
+          {
+            id: 'members-overview',
+            name: '개요',
+            path: '/admin/members/overview',
+            order: 1,
+            roles: ['system_admin', 'schedule_admin']
+          },
+          {
+            id: 'members-admins',
+            name: '관리자',
+            path: '/admin/members/admins',
+            order: 2,
+            roles: ['system_admin', 'schedule_admin']
+          },
+          {
+            id: 'members-managers',
+            name: '매니저',
+            path: '/admin/members/managers',
+            order: 3,
+            roles: ['system_admin', 'schedule_admin']
+          }
+        ]
+      },
+      {
+        id: 'professors',
+        name: '교수 관리',
+        path: '/admin/professors',
+        order: 3,
+        roles: ['system_admin', 'schedule_admin']
+      },
+      {
+        id: 'system-settings',
+        name: '시스템 설정',
+        order: 4,
+        roles: ['system_admin'], // system_admin만
+        children: [
+          {
+            id: 'permissions',
+            name: '권한 관리',
+            path: '/permissions',
+            order: 1,
+            roles: ['system_admin']
+          },
+          {
+            id: 'menu-manager',
+            name: '메뉴 관리',
+            path: '/admin/menu-manager',
+            order: 2,
+            roles: ['system_admin']
+          }
+        ]
+      }
+    ]
+  },
+
+  // 📅 스케줄 섹션
+  {
+    id: 'schedule-section',
+    name: '스케줄 관리',
     order: 2,
-    type: 'folder', // 폴더형 메뉴
+    roles: ['system_admin', 'schedule_admin', 'professor', 'academy_manager', 'online_manager'],
     children: [
-      { id: 'user-management', name: '사용자 관리', path: '/admin/users', icon: 'Users' },
-      { id: 'permission-management', name: '권한 관리', path: '/admin/permission-manager', icon: 'Shield' },
-      { id: 'system-settings', name: '시스템 설정', path: '/admin/settings', icon: 'Cog' }
+      {
+        id: 'studio-schedules',
+        name: '스튜디오 스케줄',
+        path: '/studio-schedules',
+        order: 1,
+        roles: ['system_admin', 'schedule_admin', 'professor']
+      },
+      {
+        id: 'academy-schedules',
+        name: '아카데미 스케줄',
+        path: '/academy-schedules',
+        order: 2,
+        roles: ['system_admin', 'schedule_admin', 'academy_manager']
+      },
+      {
+        id: 'manager-studio',
+        name: '매니저 스튜디오',
+        path: '/ManagerStudioSchedulePage',
+        order: 3,
+        roles: ['system_admin', 'schedule_admin', 'online_manager']
+      },
+      {
+        id: 'all-schedules',
+        name: '전체 스케줄',
+        path: '/all-schedules',
+        order: 4,
+        roles: ['system_admin', 'schedule_admin']
+      }
     ]
   },
 
-  SCHEDULES: {
-    id: 'schedules',
-    name: '스케줄',
-    icon: 'Calendar',
+  // 🎬 촬영자 섹션
+  {
+    id: 'shooter-section',
+    name: '촬영 관리',
     order: 3,
-    type: 'folder',
+    roles: ['shooter'],
     children: [
-      { id: 'all-schedules', name: '전체 스케줄', path: '/all-schedules', icon: 'List' },
-      { id: 'studio-schedules', name: '스튜디오 스케줄', path: '/studio-schedules', icon: 'Video' },
-      { id: 'academy-schedules', name: '학원 스케줄', path: '/academy-schedules', icon: 'School' },
-      { id: 'freelancer-schedules', name: '프리랜서 스케줄', path: '/admin/freelancer-schedules', icon: 'User' }
+      {
+        id: 'shooter-dashboard',
+        name: '촬영 대시보드',
+        path: '/shooter/ShooterDashboard',
+        order: 1,
+        roles: ['shooter']
+      },
+      {
+        id: 'schedule-check',
+        name: '스케줄 확인',
+        path: '/shooter/schedule-check',
+        order: 2,
+        roles: ['shooter']
+      },
+      {
+        id: 'schedule-register',
+        name: '일정 등록',
+        path: '/shooter/schedule-register',
+        order: 3,
+        roles: ['shooter']
+      }
     ]
   },
 
-  REPORTS: {
-    id: 'reports',
-    name: '리포트',
-    path: '/reports',
-    icon: 'BarChart',
-    order: 4,
-    type: 'single'
-  },
-
-  SHOOTING: {
-    id: 'shooting',
-    name: '촬영',
-    icon: 'Camera',
-    order: 5,
-    type: 'folder',
+  // ⚙️ 설정 섹션
+  {
+    id: 'settings-section',
+    name: '설정',
+    order: 10,
+    roles: ['system_admin', 'schedule_admin', 'professor', 'shooter', 'academy_manager', 'online_manager'],
     children: [
-      { id: 'shooter-dashboard', name: '촬영자 대시보드', path: '/shooter/dashboard', icon: 'Camera' }
+      {
+        id: 'profile',
+        name: '프로필 설정',
+        path: '/settings/profile',
+        order: 1,
+        roles: ['system_admin', 'schedule_admin', 'professor', 'shooter', 'academy_manager', 'online_manager']
+      },
+      {
+        id: 'notifications',
+        name: '알림 센터',
+        path: '/notifications/center',
+        order: 2,
+        roles: ['system_admin', 'schedule_admin', 'professor', 'shooter', 'academy_manager', 'online_manager']
+      }
     ]
-  },
-
-  PROFILE: {
-    id: 'profile',
-    name: '프로필',
-    path: '/profile',
-    icon: 'User',
-    order: 6,
-    type: 'single'
   }
-};
+];

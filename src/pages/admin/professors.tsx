@@ -9,7 +9,7 @@ export default function ProfessorsPage(): JSX.Element {
       backgroundColor: '#f8fafc'
     }}>
       {/* 🎯 실제 관리자 역할명으로 수정 */}
-      <ProtectedRoute allowedRoles={['system_admin', 'schedule_admin']}>
+      <ProtectedRoute allowedRoles={['system_admin', 'schedule_admin', 'manager']}>
         <div style={{
           padding: '20px',
           maxWidth: '1400px',

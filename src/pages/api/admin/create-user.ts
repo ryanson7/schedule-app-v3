@@ -67,7 +67,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from('users_formatted')
       .select('id, name, email')
       .eq('email', processedData.email)
-      .in('role', ['system_admin', 'schedule_admin', 'admin'])
+      .in('role', ['system_admin', 'schedule_admin', 'manager', 'admin'])
       .maybeSingle();
 
     if (existingUser) {

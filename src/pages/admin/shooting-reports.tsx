@@ -590,7 +590,7 @@ export default function ShootingReportsPage() {
   }
 
   const userRole = safeUserRole(userInfo.role);
-  const allowedRoles = ['system_admin', 'schedule_admin'];
+  const allowedRoles = ['system_admin', 'schedule_admin', 'manager'];
   if (!allowedRoles.includes(userRole)) {
     return (
       <div style={{

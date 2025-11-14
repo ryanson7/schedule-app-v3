@@ -43,7 +43,9 @@ interface Notification {
 }
 
 const ShooterDashboard = () => {
-  const { user } = useAuth();
+  const authContext = useAuth();
+  const { user, signOut } = authContext;
+  const authLoading = authContext.loading;
   const router = useRouter();
   
   // 🔧 모바일 반응형 상태 추가
@@ -85,6 +87,17 @@ const ShooterDashboard = () => {
       router.push('/login');
     }
   }, [router]);
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      router.replace('/login');
+    }
+  }, [authLoading, user, router]);
+
 
   // 🔧 반응형 스타일 객체
   const styles = {
@@ -834,10 +847,13 @@ const ShooterDashboard = () => {
           </button>
           
           <button
-            onClick={() => {
-              localStorage.removeItem('userName');
-              localStorage.removeItem('userRole');
-              router.push('/login');
+            onClick={async () => {
+              try {
+                await signOut();
+              } catch (error) {
+                console.error('로그아웃 처리 중 오류가 발생했습니다.', error);
+                router.push('/login');
+              }
             }}
             style={{
               ...styles.navButton,

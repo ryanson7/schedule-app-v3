@@ -114,7 +114,7 @@ export default function AdminsManagementPage() {
             )
           )
         `)
-        .in('role', ['system_admin', 'schedule_admin', 'academy_manager', 'online_manager'])
+       .in('role', ['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager'])
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -173,7 +173,7 @@ export default function AdminsManagementPage() {
         const { data: backupData, error: backupError } = await supabase
           .from('users')
           .select('id, name, email, phone, role, status, is_active, created_at')
-          .in('role', ['system_admin', 'schedule_admin', 'academy_manager', 'online_manager'])
+          .in('role', ['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager'])
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 
@@ -319,7 +319,7 @@ export default function AdminsManagementPage() {
               position_id: values[5]?.trim() || ''
             };
             
-            if (!['system_admin', 'schedule_admin', 'academy_manager', 'online_manager'].includes(adminData.role)) {
+            if (!['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager'].includes(adminData.role)) {
               adminData.role = 'schedule_admin';
             }
             

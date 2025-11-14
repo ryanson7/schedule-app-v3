@@ -110,37 +110,36 @@ export const AuthProvider = ({ children, initialSession }: AuthProviderProps) =>
     console.log('🔄 사용자 정보 완전 삭제 완료');
   }, [deleteCookie]);
 
-  // ✅ auth_id로 사용자 조회 (최종 수정)
-  const loadUserData = useCallback(async (authUserId: string) => {
-    try {
-      console.log('🔍 숫자 ID 조회 시작:', authUserId);
-      
-      const { data: userData, error } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', authUserId)  // ✅ auth_id로 조회
-        .eq('is_active', true)
-        .single();
+const loadUserData = useCallback(async (authUserId: string) => {
+  try {
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('auth_id', authUserId)
+      .eq('is_active', true)
+      .single();
 
-      if (error) {
-        console.error('❌ 숫자 ID 조회 실패:', error);
-        return;
-      }
-
-      if (userData) {
-        localStorage.setItem('userNumericId', userData.id.toString());
-        
-        console.log('✅ 숫자 ID 저장 완료:', {
-          authUserId,
-          numericId: userData.id
-        });
-      } else {
-        console.warn('⚠️ 숫자 ID 조회 결과 없음');
-      }
-    } catch (error) {
-      console.error('❌ 숫자 ID 조회 오류:', error);
+    if (error) {
+      console.error('❌ 숫자 ID 조회 실패:', error);
+      return;
     }
-  }, []);
+
+    if (userData) {
+      localStorage.setItem('userNumericId', userData.id.toString());
+      // context의 user 객체에 numericId 병합
+      setUser(prev => prev ? { ...prev, numericId: userData.id } : prev);
+      console.log('✅ 숫자 ID 저장 및 병합 완료:', {
+        authUserId,
+        numericId: userData.id
+      });
+    }else {
+      console.warn('⚠️ 숫자 ID 조회 결과 없음');
+    }
+  } catch (error) {
+    console.error('❌ 숫자 ID 조회 오류:', error);
+  }
+}, []);
+
 
   const handleUserLogin = useCallback(async (session: Session) => {
     if (authInitialized) return;

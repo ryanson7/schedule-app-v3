@@ -45,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `);
 
     // 관리자 역할만 조회
-    query = query.in('role', ['system_admin', 'schedule_admin', 'admin']);
+    query = query.in('role', ['system_admin', 'schedule_admin', 'manager', 'admin']);
 
     // 역할 필터
     if (role && role !== 'all') {

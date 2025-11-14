@@ -2,7 +2,7 @@
 import { UserRoleType } from '../types/users';
 
 // ✅ 관리자 판별
-export const ADMIN_ROLES: UserRoleType[] = ['system_admin', 'schedule_admin'];
+export const ADMIN_ROLES: UserRoleType[] = ['system_admin', 'schedule_admin', 'manager'];
 export const isAdmin = (role?: string): boolean =>
   !!role && ADMIN_ROLES.includes(role as UserRoleType);
 
@@ -10,6 +10,7 @@ export const isAdmin = (role?: string): boolean =>
 export const ROLE_START_PATH: Record<UserRoleType, string> = {
   system_admin: '/admin',
   schedule_admin: '/admin',
+  manager: '/admin',
   academy_manager: '/academy-schedules',
   online_manager: '/ManagerStudioSchedulePage',
   professor: '/studio-schedules',
@@ -28,6 +29,7 @@ const FEATURE_FLAGS = {
 const ROLE_ALLOWED_PATHS: Record<UserRoleType, string[]> = {
   system_admin: ['*'], // 모든 경로 허용
   schedule_admin: ['*'], // 모든 경로 허용
+  manager: ['*'],
   academy_manager: [
     '/academy-schedules',
     '/profile',
@@ -168,6 +170,7 @@ export const debugRoleAccess = (role: UserRoleType, path: string): void => {
 export const ROLE_DISPLAY_NAMES: Record<UserRoleType, string> = {
   system_admin: '시스템 관리자',
   schedule_admin: '스케줄 관리자',
+  manager: '일반 관리자',
   academy_manager: '학원 관리자',
   online_manager: '온라인 관리자',
   professor: '교수',
@@ -178,6 +181,7 @@ export const ROLE_DISPLAY_NAMES: Record<UserRoleType, string> = {
 export const ROLE_COLORS: Record<UserRoleType, string> = {
   system_admin: '#dc2626',
   schedule_admin: '#ea580c',
+  manager: '#f97316',
   academy_manager: '#3b82f6',
   online_manager: '#059669',
   professor: '#0891b2',
@@ -189,6 +193,7 @@ export const ROLE_COLORS: Record<UserRoleType, string> = {
 export const ROLE_LEVELS: Record<UserRoleType, number> = {
   system_admin: 100,
   schedule_admin: 90,
+  manager: 85,
   academy_manager: 50,
   online_manager: 50,
   professor: 30,
@@ -204,12 +209,11 @@ export const hasHigherRole = (userRole: UserRoleType, requiredRole: UserRoleType
 // ✅ 기능별 접근 권한 체크
 export const canAccessFeature = (role: UserRoleType, feature: string): boolean => {
   const featurePermissions: Record<string, UserRoleType[]> = {
-    'user_management': ['system_admin'],
-    'schedule_management': ['system_admin', 'schedule_admin'],
-    'studio_booking': ['system_admin', 'schedule_admin', 'professor'],
-    'shooting_schedule': ['system_admin', 'schedule_admin', 'shooter'],
-    'academy_schedule': ['system_admin', 'schedule_admin', 'academy_manager'],
-    'report_view': ['system_admin', 'schedule_admin', 'academy_manager', 'online_manager'],
+    'schedule_management': ['system_admin', 'schedule_admin', 'manager'],
+    'studio_booking': ['system_admin', 'schedule_admin', 'manager', 'professor'],
+    'shooting_schedule': ['system_admin', 'schedule_admin', 'manager', 'shooter'],
+    'academy_schedule': ['system_admin', 'schedule_admin', 'manager', 'academy_manager'],
+    'report_view': ['system_admin', 'schedule_admin', 'manager', 'academy_manager', 'online_manager'],
   };
   
   const allowedRoles = featurePermissions[feature];

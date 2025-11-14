@@ -320,7 +320,7 @@ export default function AdminTrackingPage() {
 
   // 권한 체크
   const userRole = safeUserRole(userInfo.role);
-  const allowedRoles = ['system_admin', 'schedule_admin']; // 🔧 schedule_admin 추가
+  const allowedRoles = ['system_admin', 'schedule_admin', 'manager']; // 🔧 manager 권한 포함
   if (!allowedRoles.includes(userRole)) {
     return (
       <div style={{ 

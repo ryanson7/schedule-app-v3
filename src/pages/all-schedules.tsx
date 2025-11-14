@@ -63,7 +63,9 @@ export default function AllSchedulesPage() {
       
       if (name === 'manager1' || role === 'system_admin' || role === 'schedule_admin') {
         normalizedRole = 'admin';
-      } else if (role === 'academy_manager' || role === 'manager' || role === 'studio_manager') {
+      } else if (role === 'manager') {
+        normalizedRole = 'manager';
+      } else if (role === 'academy_manager' || role === 'online_manager' || role === 'studio_manager') {
         normalizedRole = 'manager';
       }
       

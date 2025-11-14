@@ -213,7 +213,7 @@ export default function LoginPage() {
           redirectPath = '/shooter/ShooterDashboard';
           break;
         case 'professor':
-          redirectPath = '/professor';
+          redirectPath = '/studio-schedules';
           break;
         default:
           redirectPath = '/';

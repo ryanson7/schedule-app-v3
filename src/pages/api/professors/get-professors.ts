@@ -1,5 +1,3 @@
-export const config = { runtime: 'edge' };
-
 // pages/api/professors/get-professors.ts (개선된 버전)
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createClient } from '@supabase/supabase-js';

@@ -26,6 +26,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log('🔍 매니저 생성 요청:', { email, name, manager_type, main_location_id, position_id });
 
     // 1) Auth에 사용자 생성
+    const allowedManagerTypes = ['academy_manager', 'online_manager'] as const;
+    const normalizedManagerType = allowedManagerTypes.includes(manager_type)
+      ? manager_type
+      : 'online_manager';
+
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: 'eduwill1234!',
@@ -33,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       user_metadata: {
         name,
         phone,
-        role: 'manager'
+        role: normalizedManagerType
       }
     });
 
@@ -50,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         email,
         name,
         phone: phone || null,
-        role: 'manager',
+        role: normalizedManagerType,
         is_active: true,
         status: 'active'
         // is_temp_password 제거
@@ -67,15 +72,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 3) managers 테이블에 세부 정보 저장
     const managerData = {
       user_id: userData.id,
-      manager_type: manager_type || 'online_manager',
+      manager_type: normalizedManagerType,
       is_active: true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-    if (manager_type === 'academy_manager' && main_location_id) {
+    if (normalizedManagerType === 'academy_manager' && main_location_id) {
       managerData.main_location_id = parseInt(main_location_id);
-    }
+      } else {
+      managerData.main_location_id = null;
+      }
+    
 
     if (position_id && position_id !== '' && position_id !== 'null') {
       managerData.position_id = parseInt(position_id);

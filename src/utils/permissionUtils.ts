@@ -2,13 +2,14 @@
 import { dynamicPermissionSystem } from './dynamicPermissionSystem';
 
 // 🔥 타입 정의
-export type UserRoleType = 
-  | 'system_admin' 
-  | 'schedule_admin' 
-  | 'academy_manager' 
-  | 'online_manager' 
-  | 'professor' 
-  | 'shooter' 
+export type UserRoleType =
+  | 'system_admin'
+  | 'schedule_admin'
+  | 'manager'
+  | 'academy_manager'
+  | 'online_manager'
+  | 'professor'
+  | 'shooter'
   | 'staff';
 
 // 🔥 현재 사용자 역할 가져오기
@@ -23,6 +24,7 @@ export const getUserRole = (): UserRoleType => {
     const specialAccounts: Record<string, UserRoleType> = {
       'admin': 'system_admin',
       'manager1': 'schedule_admin',
+      'manager1': 'manager',
       'studio001': 'online_manager',
       'academy001': 'academy_manager'
     };
@@ -45,12 +47,13 @@ export const getUserRole = (): UserRoleType => {
 // 🔥 유효한 역할인지 확인
 export const isValidRole = (role: string): boolean => {
   const validRoles: UserRoleType[] = [
-    'system_admin', 
-    'schedule_admin', 
-    'academy_manager', 
-    'online_manager', 
-    'professor', 
-    'shooter', 
+    'system_admin',
+    'schedule_admin',
+    'manager',
+    'academy_manager',
+    'online_manager',
+    'professor',
+    'shooter',
     'staff'
   ];
   return validRoles.includes(role as UserRoleType);
@@ -141,6 +144,7 @@ export const getRoleDisplayName = (role: UserRoleType): string => {
   const roleNames: Record<UserRoleType, string> = {
     'system_admin': '시스템 관리자',
     'schedule_admin': '스케줄 관리자',
+    'manager': '일반 관리자',
     'academy_manager': '학원 매니저',
     'online_manager': '온라인 매니저',
     'professor': '교수',
@@ -164,17 +168,17 @@ export const withPermission = (
 
 // 🔥 기능별 권한 체크 함수들
 export const canManageSchedules = (userRole: string): boolean => {
-  const manageRoles: UserRoleType[] = ['system_admin', 'schedule_admin'];
+  const manageRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'manager'];
   return manageRoles.includes(userRole as UserRoleType);
 };
 
 export const canManageMembers = (userRole: string): boolean => {
-  const manageRoles: UserRoleType[] = ['system_admin', 'schedule_admin'];
+  const manageRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'manager'];
   return manageRoles.includes(userRole as UserRoleType);
 };
 
 export const canManageProfessors = (userRole: string): boolean => {
-  const manageRoles: UserRoleType[] = ['system_admin', 'schedule_admin'];
+  const manageRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'manager'];
   return manageRoles.includes(userRole as UserRoleType);
 };
 
@@ -184,12 +188,12 @@ export const canAccessShooterFeatures = (userRole: string): boolean => {
 };
 
 export const canAccessAcademyFeatures = (userRole: string): boolean => {
-  const academyRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'academy_manager'];
+  const academyRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'manager', 'academy_manager'];
   return academyRoles.includes(userRole as UserRoleType);
 };
 
 export const canAccessOnlineFeatures = (userRole: string): boolean => {
-  const onlineRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'online_manager'];
+  const onlineRoles: UserRoleType[] = ['system_admin', 'schedule_admin', 'manager', 'online_manager'];
   return onlineRoles.includes(userRole as UserRoleType);
 };
 

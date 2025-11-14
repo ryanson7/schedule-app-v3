@@ -9,7 +9,7 @@ interface Manager {
   name: string;
   email: string;
   phone?: string;
-  role: 'manager';
+  role: 'academy_manager' | 'online_manager';
   manager_type: 'academy_manager' | 'online_manager';
   status: 'active' | 'inactive';
   is_active: boolean;
@@ -145,7 +145,7 @@ export default function ManagersManagementPage() {
             )
           )
         `)
-        .eq('role', 'manager')
+        .in('role', ['academy_manager', 'online_manager'])
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -159,7 +159,7 @@ export default function ManagersManagementPage() {
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('users')
           .select('id, name, email, phone, role, status, is_active, created_at')
-          .eq('role', 'manager')
+        .in('role', ['academy_manager', 'online_manager'])
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 

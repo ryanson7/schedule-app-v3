@@ -22,7 +22,7 @@ export default function PermissionsPage() {
       setCurrentUser({ name: userName, role: userRole });
       
       // 권한 체크
-      if (!['system_admin', 'schedule_admin'].includes(userRole)) {
+      if (!['system_admin', 'schedule_admin', 'manager'].includes(userRole)) {
         alert('권한이 없습니다.');
         router.push('/dashboard');
         return;
@@ -71,6 +71,7 @@ export default function PermissionsPage() {
       const roles = [
         { id: 'system_admin', name: '시스템 관리자', color: '#dc2626', level: 100 },
         { id: 'schedule_admin', name: '스케줄 관리자', color: '#ea580c', level: 80 },
+        { id: 'manager', name: '일반 관리자', color: '#f97316', level: 75 },
         { id: 'professor', name: '교수', color: '#0d9488', level: 40 },
         { id: 'staff', name: '일반 직원', color: '#6366f1', level: 10 }
       ];

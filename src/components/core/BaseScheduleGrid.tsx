@@ -1,5 +1,7 @@
 "use client";
 import { ReactNode, useState, useCallback } from "react";
+import { canApprove, canRequestOnly, AppRole } from '../core/permissions';
+
 
 interface BaseScheduleGridProps {
   title?: string;
@@ -63,6 +65,7 @@ export default function BaseScheduleGrid({
   
   const [dragOverCell, setDragOverCell] = useState<string | null>(null);
   const [cellDropStates, setCellDropStates] = useState<{[key: string]: 'ok' | 'no' | ''}>({});
+  
   
   const safeTitle = title || "스케줄 관리";
   const safeLeftColumnTitle = leftColumnTitle || "위치";

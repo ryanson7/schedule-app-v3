@@ -73,7 +73,7 @@ export default function MembersManagementPage() {
       });
 
       // 권한 체크
-      if (!['system_admin', 'schedule_admin'].includes(userRole || '')) {
+        if (!['system_admin', 'schedule_admin', 'manager'].includes(userRole || '')) {
         // Academy Manager, Online Manager는 각자 페이지로 리다이렉트
         if (userRole === 'academy_manager') {
           router.replace('/academy-schedules');
@@ -115,14 +115,15 @@ export default function MembersManagementPage() {
             name
           )
         `)
-        .in('role', [
-          'system_admin',
-          'schedule_admin', 
-          'academy_manager',
-          'online_manager',
-          'professor',
-          'shooter'
-        ])
+          .in('role', [
+            'system_admin',
+            'schedule_admin',
+            'manager',
+            'academy_manager',
+            'online_manager',
+            'professor',
+            'shooter'
+          ])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -139,7 +140,7 @@ export default function MembersManagementPage() {
     switch (activeTab) {
       case 'admins':
         filtered = filtered.filter(user => 
-          ['system_admin', 'schedule_admin'].includes(user.role)
+          ['system_admin', 'schedule_admin', 'manager'].includes(user.role)
         );
         break;
       case 'managers':
@@ -429,7 +430,7 @@ export default function MembersManagementPage() {
           }}>
             {[
               { id: 'overview', name: '📊 전체 멤버현황', count: users.length },
-              { id: 'admins', name: '👑 관리자 관리', count: users.filter(u => ['system_admin', 'schedule_admin'].includes(u.role)).length },
+              { id: 'admins', name: '👑 관리자 관리', count: users.filter(u => ['system_admin', 'schedule_admin', 'manager'].includes(u.role)).length },
               { id: 'managers', name: '🎯 매니저 관리', count: users.filter(u => ['academy_manager', 'online_manager'].includes(u.role)).length },
               { id: 'shooters', name: '📹 촬영자 관리', count: users.filter(u => u.role === 'shooter').length }
             ].map((tab) => (
