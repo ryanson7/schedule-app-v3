@@ -830,39 +830,67 @@ export default function StudioScheduleModal({
 
   const isEditMode = !!(initialData?.scheduleData && initialData.scheduleData.id);
 
-  const getInitialFormData = () => {
-    const scheduleData = initialData?.scheduleData;
+  // ✅ 3. getInitialFormData 함수 수정
+const getInitialFormData = () => {
+  const scheduleData = initialData?.scheduleData;
+  
+  console.log('🔍 [getInitialFormData] scheduleData:', scheduleData);
+  console.log('🔍 [getInitialFormData] isEditMode:', isEditMode);
+  
+  // ✅ 수정 모드일 때
+  if (isEditMode && scheduleData) {
+    const formData = {
+      shoot_date: scheduleData.shoot_date || initialData?.date || '',
+      start_time: formatTimeForInput(scheduleData.start_time) || '',
+      end_time: formatTimeForInput(scheduleData.end_time) || '',
+      professor_name: scheduleData.professor_name || '',
+      course_name: scheduleData.course_name || '',
+      course_code: scheduleData.course_code || '',
+      shooting_type: scheduleData.shooting_type || '',
+      notes: scheduleData.notes || '',
+      sub_location_id: scheduleData.sub_location_id || initialData?.locationId || ''
+    };
     
-    if (isEditMode && scheduleData) {
-      return {
-        shoot_date: getInitValue(scheduleData.shoot_date || initialData.date),
-        start_time: formatTimeForInput(scheduleData.start_time),
-        end_time: formatTimeForInput(scheduleData.end_time),
-        professor_name: getInitValue(scheduleData.professor_name),
-        course_name: getInitValue(scheduleData.course_name),
-        course_code: getInitValue(scheduleData.course_code),
-        shooting_type: getInitValue(scheduleData.shooting_type),
-        notes: getInitValue(scheduleData.notes),
-        sub_location_id: getInitValue(scheduleData.sub_location_id || initialData.locationId)
-      };
-    } else {
-      // 🆕 신규 등록 모드
-      const regRange = SchedulePolicy.getRegistrationDateRange();
-      return {
-        shoot_date: getInitValue(scheduleData?.shoot_date || initialData?.date || regRange.startDate),
-        start_time: '',
-        end_time: '',
-        professor_name: '',
-        course_name: '',
-        course_code: '',
-        shooting_type: getInitValue(scheduleData?.shooting_type || ''),
-        notes: '',
-        sub_location_id: getInitValue(scheduleData?.sub_location_id || initialData?.locationId)
-      };
-    }
-  };
+    console.log('✅ [getInitialFormData] 수정 모드 formData:', formData);
+    
+    return formData;
+  } else {
+    // ✅ 신규 등록 모드
+    const regRange = SchedulePolicy.getRegistrationDateRange();
+    
+    const formData = {
+      shoot_date: initialData?.date || regRange.startDate || '',
+      start_time: '',
+      end_time: '',
+      professor_name: '',
+      course_name: '',
+      course_code: '',
+      shooting_type: '',
+      notes: '',
+      sub_location_id: initialData?.locationId || ''
+    };
+    
+    console.log('✅ [getInitialFormData] 신규 모드 formData:', formData);
+    
+    return formData;
+  }
+};
 
-  const [formData, setFormData] = useState(getInitialFormData);
+useEffect(() => {
+    if (open && initialData) {
+      console.log('🔄 [STUDIO] formData 재설정 시작');
+      console.log('📦 [STUDIO] initialData:', initialData);
+      
+      const newFormData = getInitialFormData();
+      
+      console.log('✅ [STUDIO] 새 formData:', newFormData);
+      
+      setFormData(newFormData);
+    }
+  }, [open, initialData?.scheduleData?.id]);
+  
+
+  const [formData, setFormData] = useState(() => getInitialFormData());
   const [shootingTypes, setShootingTypes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -1084,54 +1112,108 @@ export default function StudioScheduleModal({
     setCurrentMode('edit');
   };
 
-  // 🔥 ProfessorAutocomplete 로딩 후에도 selectedProfessorInfo 유지
-  useEffect(() => {
-    const sd = initialData?.scheduleData;
-    
-    console.log('🔍 [STUDIO useEffect] 실행:', { 
-      open, 
-      hasScheduleData: !!sd,
-      professor_name: sd?.professor_name,
-      professor_category_name: sd?.professor_category_name 
+// 🔥 ProfessorAutocomplete 로딩 후에도 selectedProfessorInfo 유지 + 자동 매핑
+useEffect(() => {
+  const sd = initialData?.scheduleData;
+
+  console.log('🔍 [STUDIO useEffect] 실행:', {
+    open,
+    hasScheduleData: !!sd,
+    professor_name: sd?.professor_name,
+    professor_category_name: sd?.professor_category_name,
+  });
+
+  if (!open) {
+    console.log('⚠️ [STUDIO] 모달이 닫혀있음');
+    return;
+  }
+
+  if (!sd) {
+    console.log('⚠️ [STUDIO] scheduleData 없음');
+    setSelectedProfessorInfo(null);
+    return;
+  }
+
+  // 1) 스케줄이 들고 있는 교수 정보로 1차 세팅 (이미 매핑된 경우를 우선 존중)
+  if (sd.professor_name) {
+    const baseInfo = {
+      id: sd.professor_id ?? null, // 없으면 null
+      name: sd.professor_name,
+      category_id: sd.professor_category_id ?? null,
+      category_name: sd.professor_category_name ?? '',
+    };
+
+    console.log('✅ [STUDIO] selectedProfessorInfo 1차 설정:', baseInfo);
+
+    // 이미 자동 매핑으로 id가 있는 상태라면 덮어쓰지 않음
+    setSelectedProfessorInfo((prev) => {
+      if (prev && prev.id) {
+        return prev; // 이미 매핑된 정보 유지
+      }
+      return baseInfo;
     });
-    
-    if (!open) {
-      console.log('⚠️ [STUDIO] 모달이 닫혀있음');
-      return;
-    }
-    
-    if (!sd) {
-      console.log('⚠️ [STUDIO] scheduleData 없음');
-      return;
-    }
-    
-    if (sd.professor_name) {
-      const profInfo = {
-        id: sd.professor_category_id || null,
-        name: sd.professor_name,
-        category_id: sd.professor_category_id || null,
-        category_name: sd.professor_category_name || ''
-      };
-      
-      console.log('✅ [STUDIO] selectedProfessorInfo 설정:', profInfo);
-      setSelectedProfessorInfo(profInfo);
-      
-      // 🔥 강제 리렌더링 트리거 (ProfessorAutocomplete 로딩 후)
-      setTimeout(() => {
-        console.log('🔄 [STUDIO] 100ms 후 상태 재확인:', profInfo);
-        setSelectedProfessorInfo(profInfo);  // ✅ 다시 설정!
-      }, 100);
-      
-      // 🔥 추가로 500ms 후에도 재설정
-      setTimeout(() => {
-        console.log('🔄 [STUDIO] 500ms 후 상태 재확인:', profInfo);
-        setSelectedProfessorInfo(profInfo);  // ✅ 다시 설정!
-      }, 500);
-    } else {
-      console.log('⚠️ [STUDIO] 교수 정보 없음');
-      setSelectedProfessorInfo(null);
-    }
-  }, [open, initialData]);
+  } else {
+    console.log('⚠️ [STUDIO] 교수 정보 없음');
+    setSelectedProfessorInfo(null);
+    return;
+  }
+
+  // 2) 교수 등록 페이지에서 온 스케줄: 이름만 있고 카테고리가 없는 경우 → 자동 매핑 시도
+  //    (이미 카테고리명이 있으면 굳이 다시 찾지 않음)
+  if (!sd.professor_category_id && !sd.professor_category_name && sd.professor_name) {
+    (async () => {
+      try {
+        console.log('[STUDIO] 교수 자동 매핑 시도:', sd.professor_name);
+
+        const { data, error } = await supabase
+          .from('professors')
+          .select(`
+            users!inner(id, name),
+            professor_categories:professor_category_id(id, category_name)
+          `)
+          .ilike('users.name', sd.professor_name)
+          .limit(1);
+
+        if (error) {
+          console.log('[STUDIO] 교수 자동 매핑 오류:', error);
+          return;
+        }
+        if (!data || data.length === 0) {
+          console.log('[STUDIO] 교수 자동 매핑 결과 없음 (데이터 0개)');
+          return;
+        }
+
+        const row: any = data[0];
+        const userId = row?.users?.id ?? null;
+        const userName = row?.users?.name ?? sd.professor_name;
+        const catName = row?.professor_categories?.category_name ?? '';
+        const catId = row?.professor_categories?.id ?? null;
+
+        const mappedInfo = {
+          id: userId,
+          name: userName,
+          category_id: catId,
+          category_name: catName,
+        };
+
+        console.log('[STUDIO] 교수 자동 매핑 성공:', mappedInfo);
+
+        // ✅ 자동 매핑된 정보로 갱신 (더 이상 타이머로 null로 덮어쓰지 않음)
+        setSelectedProfessorInfo(mappedInfo);
+
+        setFormData((prev: any) => ({
+          ...prev,
+          professor_id: userId,
+          professor_category_id: catId,
+          professor_category_name: catName,
+        }));
+      } catch (e) {
+        console.error('[STUDIO] 교수 자동 매핑 try/catch 오류:', e);
+      }
+    })();
+  }
+}, [open, initialData]);
+
 
   // ESC 키 처리
   useEffect(() => {
@@ -1155,168 +1237,135 @@ export default function StudioScheduleModal({
     }
   }, [open, saving, reasonModalOpen, contactModalOpen, onClose]);
 
-const fetchScheduleHistory = async (scheduleId: number) => {
-  if (!scheduleId) return;
-
+const fetchScheduleHistory = async () => {
+  if (!initialData?.scheduleData?.id) return;
+  
   setLoadingHistory(true);
   
   try {
-    console.log('스튜디오 히스토리 조회 시작:', scheduleId);
+    console.log('스튜디오 히스토리 조회 시작:', initialData.scheduleData.id);
 
-    const { data: historyData, error: historyError } = await supabase
+    // 1. 히스토리 조회
+    const { data: historyData, error } = await supabase
       .from('schedule_history')
       .select('*')
-      .eq('schedule_id', scheduleId)
-      .order('created_at', { ascending: false });
+      .eq('schedule_id', initialData.scheduleData.id)
+      .order('changed_at', { ascending: false });
 
-    if (historyError) {
-      console.error('히스토리 조회 오류:', historyError);
+    if (error) {
+      console.error('히스토리 조회 실패:', error);
+      setScheduleHistory([]);
+      setLoadingHistory(false);
+      return;
     }
 
-    const { data: scheduleData, error: scheduleError } = await supabase
-      .from('schedules')
-      .select('*')
-      .eq('id', scheduleId)
-      .single();
-
-    if (scheduleError) {
-      console.error('스케줄 데이터 조회 오류:', scheduleError);
+    if (!historyData || historyData.length === 0) {
+      setScheduleHistory([]);
+      setLoadingHistory(false);
+      return;
     }
 
-    // 🔥 1. 모든 changed_by ID 수집
-    const allUserIds = new Set<number>();
+    // 2. 사용자 ID 추출 (null 제외)
+    const userIds = [...new Set(
+      historyData
+        .map((h: any) => h.changed_by)
+        .filter((id): id is number => id !== null && id !== undefined)
+    )];
+
+    // 3. 사용자 정보 조회
+    const userMap = new Map<number, string>();
     
-    if (historyData) {
-      historyData.forEach(h => {
-        if (typeof h.changed_by === 'number') {
-          allUserIds.add(h.changed_by);
-        }
-      });
+    if (userIds.length > 0) {
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', userIds);
+
+      if (!usersError && usersData) {
+        usersData.forEach((user: any) => {
+          if (user.id && user.name) {
+            userMap.set(user.id, user.name);
+          }
+        });
+      }
     }
 
-    // 🔥 2. users 테이블에서 한 번에 조회
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name')
-      .in('id', Array.from(allUserIds));
+    //console.log('👥 사용자 매핑:', userMap);
 
-    const userMap = new Map(users?.map(u => [u.id, u.name]) || []);
-    
-    console.log('👥 사용자 매핑:', userMap);
-
-    // 🔥 3. getUserDisplayName 함수
-    const getUserDisplayName = (changedBy: any): string => {
-      if (!changedBy) return '담당자 정보 없음';
+    // ✅ 4. action 한글 변환 함수
+    const getActionLabel = (changeType: string): string => {
+      const actionMap: { [key: string]: string } = {
+        'created': '등록됨',
+        'updated': '수정됨',
+        'deleted': '삭제됨',
+        'approved': '승인됨',
+        'rejected': '반려됨',
+        'requested': '요청됨',
+        'cancelled': '취소됨',
+        'UPDATE': '수정됨',
+        'CREATE': '등록됨',
+        'DELETE': '삭제됨'
+      };
       
-      if (typeof changedBy === 'number') {
-        return userMap.get(changedBy) || `ID: ${changedBy}`;
-      }
-      
-      if (typeof changedBy === 'string' && !isNaN(Number(changedBy))) {
-        const userId = Number(changedBy);
-        return userMap.get(userId) || `ID: ${changedBy}`;
-      }
-      
-      return changedBy;
+      return actionMap[changeType] || changeType;
     };
 
-    const historyMap = new Map<string, any>();
-
-    // 시스템 히스토리 추가 (등록됨)
-    if (scheduleData) {
-      const createdHistory = historyData?.find(h => h.change_type === 'created');
-      
-      if (createdHistory) {
-        const creatorName = getUserDisplayName(createdHistory.changed_by);
-
-        historyMap.set(`created_${scheduleData.id}`, {
-          id: `created_${scheduleData.id}`,
-          action: '등록됨',
-          reason: '최초 스케줄 등록',
-          changed_by: creatorName,
-          created_at: scheduleData.created_at,
-          details: `${scheduleData.professor_name} 교수님 스케줄 등록`,
-          source: 'system'
-        });
-      }
-
-      // 승인 히스토리
-      if (scheduleData.approval_status === 'approved') {
-        const approvedHistory = historyData?.find(h => h.change_type === 'approved' || h.change_type === 'approve');
-        const approverName = approvedHistory ? getUserDisplayName(approvedHistory.changed_by) : '담당자 정보 없음';
-
-        historyMap.set(`approved_${scheduleData.id}`, {
-          id: `approved_${scheduleData.id}`,
-          action: '승인완료',
-          reason: '관리자 승인 처리',
-          changed_by: approverName,
-          created_at: scheduleData.updated_at || scheduleData.created_at,
-          details: `${scheduleData.professor_name} 교수님 스케줄 승인 완료`,
-          source: 'system'
-        });
-      }
-
-      // 취소 히스토리
-      if (scheduleData.approval_status === 'cancelled') {
-        const cancelledHistory = historyData?.find(h => h.change_type === 'cancelled');
-        const cancellerName = cancelledHistory ? getUserDisplayName(cancelledHistory.changed_by) : '담당자 정보 없음';
-
-        historyMap.set(`cancelled_${scheduleData.id}`, {
-          id: `cancelled_${scheduleData.id}`,
-          action: '취소완료',
-          reason: '관리자 취소 승인',
-          changed_by: cancellerName,
-          created_at: scheduleData.updated_at || scheduleData.created_at,
-          details: `${scheduleData.professor_name} 교수님 스케줄 취소 처리 완료`,
-          source: 'system'
-        });
-      }
+// 5. 히스토리 포맷팅
+const formattedHistory: any[] = historyData
+  .filter((item: any) => {
+    // ✅ 1. changed_by가 없는 레코드 제외
+    if (!item.changed_by) {
+      console.log('⚠️ changed_by 없음, 제외:', item);
+      return false;
     }
-
-    // schedule_history 데이터 병합
-    if (historyData && historyData.length > 0) {
-      historyData.forEach(item => {
-        const key = `history_${item.id}`;
-        
-        if (!historyMap.has(key)) {
-          const userName = getUserDisplayName(item.changed_by);
-
-          let actionName = '수정됨';
-          if (item.change_type === 'cancelled') {
-            actionName = '취소요청';
-          } else if (item.change_type === 'approved' || item.change_type === 'approve') {
-            actionName = '승인처리';
-          } else if (item.change_type.toLowerCase() === 'update') {
-            actionName = '수정됨';
-          } else if (item.change_type === 'created') {
-            actionName = '등록됨';
-          }
-
-          historyMap.set(key, {
-            id: key,
-            action: actionName,
-            reason: item.description || '-',
-            changed_by: userName,
-            created_at: item.created_at,
-            details: item.description || '',
-            source: 'history'
-          });
-        }
-      });
+    
+    // ✅ 2. description이 없거나 "세부사항 없음"인 항목 제외
+    const desc = item.description || '';
+    if (!desc || desc === '세부사항 없음' || desc.trim() === '') {
+      console.log('⚠️ description 없음, 제외:', item);
+      return false;
     }
+    
+    return true;
+  })
+  .map((item: any) => {
+    // 사용자 이름 결정
+    const userName = userMap.get(item.changed_by) || '담당자 정보 없음';
+    
+    // 날짜 포맷팅
+    const date = new Date(item.changed_at || item.created_at);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const dateStr = `${year}. ${month}. ${day}. 오후 ${hours}:${minutes}`;
 
-    const allHistory = Array.from(historyMap.values())
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    // description을 쉼표로 분리하여 배열로 저장
+    const descriptionItems = (item.description || '')
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length > 0);
 
-    // 🔥 디버깅 로그 추가
-    console.log('📋 히스토리 상세 내용:', allHistory);
-    allHistory.forEach((h, idx) => {
-      console.log(`${idx + 1}. ${h.action} | ${h.changed_by} | ${h.details}`);
+    return {
+      id: `history-${item.id}`,
+      date: dateStr,
+      action: getActionLabel(item.change_type || '-'),
+      changedBy: userName,
+      description: item.description || '',
+      descriptionItems: descriptionItems,
+      timestamp: item.changed_at || item.created_at
+    };
+  });
+
+    console.log('📋 히스토리 상세 내용:', formattedHistory);
+    formattedHistory.forEach((h, idx) => {
+      console.log(`${idx + 1}. ${h.action} | ${h.changedBy} | ${h.description}`);
     });
 
-    setScheduleHistory(allHistory);
-    console.log('스튜디오 히스토리 조회 완료:', allHistory.length, '개');
-
+    setScheduleHistory(formattedHistory);
+    console.log('스튜디오 히스토리 조회 완료:', formattedHistory.length, '개');
+    
   } catch (error) {
     console.error('히스토리 조회 오류:', error);
     setScheduleHistory([]);
@@ -1324,7 +1373,6 @@ const fetchScheduleHistory = async (scheduleId: number) => {
     setLoadingHistory(false);
   }
 };
-
 
 
   useEffect(() => {
@@ -1680,37 +1728,77 @@ const fetchScheduleHistory = async (scheduleId: number) => {
   const [modificationReason, setModificationReason] = useState('');
   const [cancellationReason, setCancellationReason] = useState('');
   
-const handleSave = async (action) => {
-  // ✅ 현재 로그인 사용자
-  const currentAdminId = effectiveUserId;
-  const currentAdminName = effectiveUserName;
-
-  // 여기서는 "없어도 작업은 되게" 처리 (changed_by만 null로 들어감)
-  if (!currentAdminId) {
-    console.warn('⚠️ numericId 없음 - history.changed_by는 null로 기록됩니다.');
-  }
-
-    const toMin = (t: string) => {
-      const [h, m] = (t || '').split(':').map(Number);
-      return (h || 0) * 60 + (m || 0);
+const handleSave = async (action: 'temp' | 'request' | 'approve') => {
+  try {
+    // ✅ 개선된 시간 변환 함수
+    const toMin = (t: string | null | undefined): number => {
+      if (!t) return 0;
+      
+      const timeStr = String(t).trim();
+      const parts = timeStr.split(':');
+      if (parts.length < 2) return 0;
+      
+      const hours = parseInt(parts[0], 10) || 0;
+      const minutes = parseInt(parts[1], 10) || 0;
+      
+      return hours * 60 + minutes;
     };
 
-    if (toMin(formData.end_time) <= toMin(formData.start_time)) {
-      alert('종료 시간은 시작 시간보다 이후여야 합니다.');
+    // ✅ formData state 사용 (실시간 변경사항 반영)
+    const currentScheduleData = {
+      shoot_date: formData.shoot_date,          // ✅ formData 사용
+      start_time: formData.start_time,          // ✅ formData 사용
+      end_time: formData.end_time,              // ✅ formData 사용
+      professor_name: selectedProfessorInfo?.name || formData.professor_name,
+      professor_category_id: selectedProfessorInfo?.category_id,
+      course_name: formData.course_name,        // ✅ formData 사용
+      course_code: formData.course_code,        // ✅ formData 사용
+      shooting_type: formData.shooting_type,    // ✅ formData 사용
+      sub_location_id: formData.sub_location_id,// ✅ formData 사용
+      notes: formData.notes                     // ✅ formData 사용
+    };
+
+    // ✅ 디버깅 로그
+    console.log('🔍 시간 검증:', {
+      'formData.start_time': formData.start_time,
+      'formData.end_time': formData.end_time,
+      'currentScheduleData.start_time': currentScheduleData.start_time,
+      'currentScheduleData.end_time': currentScheduleData.end_time,
+      start_min: toMin(currentScheduleData.start_time),
+      end_min: toMin(currentScheduleData.end_time)
+    });
+
+    // ✅ 필수 입력 검증
+    if (!currentScheduleData.start_time || !currentScheduleData.end_time) {
+      alert('⚠️ 필수 입력\n\n시작 시간과 종료 시간을 입력해 주세요.');
       return;
     }
 
-    if (!formData.shooting_type) {
-      alert('촬영형식을 선택해 주세요.');
+    // ✅ 시간 검증
+    const startMin = toMin(currentScheduleData.start_time);
+    const endMin = toMin(currentScheduleData.end_time);
+    
+    if (endMin <= startMin) {
+      alert(
+        `⚠️ 시간 오류\n\n` +
+        `종료 시간은 시작 시간보다 이후여야 합니다.\n\n` +
+        `시작 시간: ${currentScheduleData.start_time}\n` +
+        `종료 시간: ${currentScheduleData.end_time}`
+      );
       return;
     }
 
-    if (!formData.sub_location_id) {
-      alert('스튜디오를 선택해 주세요.');
+    if (!currentScheduleData.shooting_type) {
+      alert('⚠️ 필수 입력\n\n촬영형식을 선택해 주세요.');
       return;
     }
 
+    if (!currentScheduleData.sub_location_id) {
+      alert('⚠️ 필수 입력\n\n스튜디오를 선택해 주세요.');
+      return;
+    }
 
+    // ✅ 수정 가능 여부 체크
     if (isEditMode && action !== 'approve') {
       const canEdit = SchedulePolicy.canEditOnline();
       if (!canEdit) {
@@ -1719,211 +1807,96 @@ const handleSave = async (action) => {
       }
     }
 
+    // ✅ 시간 중복 체크
     if (conflictDetected) {
-      alert('선택하신 시간대에 이미 다른 스케줄이 있습니다. 시간을 조정해주세요.');
+      alert('⚠️ 시간 중복\n\n선택하신 시간대에 이미 다른 스케줄이 있습니다.\n시간을 조정해주세요.');
       return;
     }
 
     setSaving(true);
     setMessage('');
 
+    // ✅ onSave 호출 (히스토리는 StudioAdminPanel에서 처리)
+    const result = await onSave(currentScheduleData, action);
+    
+    setMessage(result.message);
 
-      try {
-        const formDataWithUser = {
-          ...formData,
-          changed_by: currentAdminId,  // ✅ 동적으로 계산된 값 사용
-          changed_by_name: currentAdminName,
-        };
-        const result = await onSave(formDataWithUser, action);
-      
-      if (result.success && isEditMode) {
-        // ✅ 현재 로그인 사용자 (AuthContext 기반)
-        const currentUser = effectiveUserName;          // 이름/표시용
-        const editorId = effectiveUserId ?? null;       // history.changed_by 용 (nullable)
-
-        const originalData = initialData?.scheduleData;
+    if (result.success) {
+      // ✅ 승인 시 메시지 전송
+      if (action === 'approve') {
+        const messageText =
+          `[스케줄 수정 완료]\n\n` +
+          `교수명: ${currentScheduleData.professor_name}\n` +
+          `촬영일: ${currentScheduleData.shoot_date}\n` +
+          `시간: ${currentScheduleData.start_time}~${currentScheduleData.end_time}\n` +
+          `처리자: ${effectiveUserName}\n\n` +
+          `스케줄이 최종 수정되었습니다.`;
         
-        console.log('히스토리 기록 시작:', {
-          currentUser,
-          originalData: {
-            start_time: originalData?.start_time,
-            end_time: originalData?.end_time,
-            shoot_date: originalData?.shoot_date,
-            professor_name: originalData?.professor_name
-          },
-          formData: {
-            start_time: formData.start_time,
-            end_time: formData.end_time,
-            shoot_date: formData.shoot_date,
-            professor_name: formData.professor_name
-          }
-        });
-        
-        const changes: string[] = [];
-        
-        if (
-          originalData?.start_time !== formData.start_time ||
-          originalData?.end_time !== formData.end_time
-        ) {
-          changes.push(
-            `시간변경: ${originalData?.start_time}~${originalData?.end_time} → ${formData.start_time}~${formData.end_time}`
-          );
-        }
-        
-        if (originalData?.shoot_date !== formData.shoot_date) {
-          changes.push(`날짜변경: ${originalData?.shoot_date} → ${formData.shoot_date}`);
-        }
-        
-        if (originalData?.professor_name !== formData.professor_name) {
-          changes.push(
-            `교수명변경: ${originalData?.professor_name} → ${formData.professor_name}`
-          );
-        }
-        
-        console.log('감지된 변경사항:', changes);
-        
-        if (changes.length > 0) {
-          const detailsText = changes.join(', ');
-
-          const actionType =
-            action === 'approve'
-              ? 'approved'
-              : action === 'cancel_request' || action === 'cancel_approve'
-              ? 'cancelled'
-              : 'modification_requested';
-
-          let reasonText = '';
-          if (action === 'approve') {
-            reasonText = '관리자 직접 수정';
-          } else if (action === 'request' || action === 'modify_request') {
-            reasonText = modificationReason || '수정 요청';
-          } else if (action === 'cancel_request' || action === 'cancel_approve') {
-            reasonText = cancellationReason || '취소 요청';
-          } else {
-            reasonText = '시간 변경';
-          }
-
-          const descriptionPrefix =
-            action === 'approve'
-              ? '관리자 수정'
-              : action === 'cancel_request' || action === 'cancel_approve'
-              ? '취소 처리'
-              : '수정 요청';
-
-          const now = new Date().toISOString();
-
-          console.log('기록할 히스토리:', { actionType, reasonText, detailsText });
-          
-          try {
-            const historyResult = await supabase
-              .from('schedule_history')
-              .insert({
-                schedule_id: initialData.scheduleData.id,
-                change_type: actionType,
-                description: `${descriptionPrefix}: ${reasonText} [요청자: ${currentUser}]`,
-                changed_by: editorId, // ✅ numericId (없으면 null)
-                old_value: JSON.stringify(originalData),
-                new_value: JSON.stringify(formData),
-                details: detailsText,
-                created_at: now,
-                changed_at: now
-              });
-
-            if (action === 'approve') {
-              const messageText =
-                `[스케줄 수정 완료]\n\n` +
-                `교수명: ${formData.professor_name}\n` +
-                `촬영일: ${formData.shoot_date}\n` +
-                `시간: ${formData.start_time}~${formData.end_time}\n` +
-                `처리자: ${currentUser}\n\n` +
-                `스케줄이 최종 수정되었습니다.`;
-              
-              await fetch('/api/message', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  type: 'schedule_modified',
-                  message: messageText
-                })
-              });
-            }
-              
-            console.log('히스토리 기록 성공:', historyResult);
-          } catch (historyError) {
-            console.error('히스토리 기록 실패:', historyError);
-          }
+        try {
+          await fetch('/api/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'schedule_modified',
+              message: messageText
+            })
+          });
+        } catch (msgError) {
+          console.error('메시지 전송 실패:', msgError);
         }
       }
 
-      setMessage(result.message);
-
-        if (result.success) {
-          alert(result.message);
-          onClose();
-          setMessage('');
-        }
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.';
-        setMessage(errorMessage);
-        alert(errorMessage);
-        console.error('저장 오류:', error);
-      } finally {
-        setSaving(false);
-      }
-    };
-
-
-  const handleDelete = async () => {
-    if (!isEditMode || !initialData?.scheduleData?.id) {
-      alert('삭제할 수 없는 스케줄입니다.');
-      return;
-    }
-
-    const confirmDelete = confirm(
-      `정말로 이 스케줄을 삭제하시겠습니까?\n\n` +
-      `교수명: ${formData.professor_name}\n` +
-      `날짜: ${formData.shoot_date}\n` +
-      `시간: ${formData.start_time} ~ ${formData.end_time}\n\n` +
-      `삭제된 스케줄은 복구할 수 없습니다.`
-    );
-
-    if (!confirmDelete) return;
-
-    setSaving(true);
-    setMessage('');
-
-    try {
-      const { error } = await supabase
-        .from('schedules')
-        .update({
-          is_active: false,
-          approval_status: 'cancelled',
-          deletion_reason: 'admin_deleted',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', initialData.scheduleData.id);
-
-      if (error) throw error;
-
-      alert('스케줄이 삭제되었습니다.');
-      
-      if (onDelete) {
-        await onDelete(initialData.scheduleData.id);
-      }
-      
+      alert(result.message);
       onClose();
-
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : '삭제 중 오류가 발생했습니다.';
-      setMessage(errorMessage);
-      alert(errorMessage);
-      console.error('삭제 오류:', error);
-    } finally {
-      setSaving(false);
+      setMessage('');
+    } else {
+      alert(result.message);
     }
-  };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.';
+    setMessage(errorMessage);
+    alert(`❌ 저장 실패\n\n${errorMessage}`);
+    console.error('저장 오류:', error);
+  } finally {
+    setSaving(false);
+  }
+};
+
+  // handleSave 함수 다음에 추가
+const handleDelete = async () => {
+  if (!initialData?.scheduleData?.id) {
+    alert('❌ 오류\n\n삭제할 스케줄 ID가 없습니다.');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    '⚠️ 스케줄 삭제\n\n' +
+    '정말로 이 스케줄을 삭제하시겠습니까?\n' +
+    '삭제된 스케줄은 복구할 수 없습니다.'
+  );
+
+  if (!confirmed) return;
+
+  try {
+    setSaving(true);
+
+    if (onDelete) {
+      await onDelete(initialData.scheduleData.id);
+      alert('✅ 삭제 완료\n\n스케줄이 성공적으로 삭제되었습니다.');
+      onClose();
+    } else {
+      alert('❌ 오류\n\n삭제 기능을 사용할 수 없습니다.');
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '삭제 중 오류가 발생했습니다.';
+    alert(`❌ 삭제 실패\n\n${errorMessage}`);
+    console.error('삭제 오류:', error);
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   const handleRequestWithReason = (reason: string) => {
     if (requestType === 'modify') {
@@ -2319,7 +2292,7 @@ const handleSave = async (action) => {
                                     fontWeight: 600
                                   }}
                                 >
-                                  아이템: {selectedProfessorInfo.category_name}
+                                  아이템: {selectedProfessorInfo.category_name || selectedProfessorInfo.name}
                                 </span>
                               </div>
                             )}
@@ -2677,101 +2650,83 @@ const handleSave = async (action) => {
                             paddingRight: '6px'
                           }}
                         >
-                          {scheduleHistory.map((historyItem, index) => (
+                        {scheduleHistory.map((historyItem, index) => (
+                          <div
+                            key={historyItem.id || index}
+                            style={{
+                              padding: '10px',
+                              borderBottom:
+                                index < scheduleHistory.length - 1
+                                  ? '1px solid #e5e7eb'
+                                  : 'none',
+                              backgroundColor: index % 2 === 0 ? 'white' : '#f9fafb'
+                            }}
+                          >
                             <div
-                              key={historyItem.id || index}
                               style={{
-                                padding: '10px',
-                                borderBottom:
-                                  index < scheduleHistory.length - 1
-                                    ? '1px solid #e5e7eb'
-                                    : 'none',
-                                backgroundColor: index % 2 === 0 ? 'white' : '#f9fafb'
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'flex-start',
+                                marginBottom: '6px'
                               }}
                             >
-                              <div
+                              <span
                                 style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'flex-start',
-                                  marginBottom: '6px'
+                                  fontSize: '12px',
+                                  fontWeight:
+                                    historyItem.action === '승인완료' ||
+                                    historyItem.action === '수정됨' ||
+                                    historyItem.action === '관리자수정'
+                                      ? 'bold'
+                                      : historyItem.action === '등록됨' ||
+                                        historyItem.action === '수정요청' ||
+                                        historyItem.action === '취소요청'
+                                      ? '600'
+                                      : 'normal',
+                                  color: '#374151'
                                 }}
                               >
+                                {historyItem.action}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  color: '#6b7280'
+                                }}
+                              >
+                                {historyItem.date}
+                              </span>
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                lineHeight: '1.5'
+                              }}
+                            >
+                              {/* 처리자 */}
+                              <div style={{ marginBottom: '4px' }}>
                                 <span
                                   style={{
-                                    fontSize: '12px',
-                                    fontWeight:
-                                      historyItem.action === '승인완료' ||
-                                      historyItem.action === '수정' ||
-                                      historyItem.action === '관리자수정'
-                                        ? 'bold'
-                                        : historyItem.action === '등록됨' ||
-                                          historyItem.action === '수정요청' ||
-                                          historyItem.action === '취소요청'
-                                        ? '600'
-                                        : 'normal',
+                                    fontWeight: '500',
                                     color: '#374151'
                                   }}
                                 >
-                                  {historyItem.action}
+                                  처리자:
                                 </span>
                                 <span
                                   style={{
-                                    fontSize: '10px',
+                                    marginLeft: '6px',
                                     color: '#6b7280'
                                   }}
                                 >
-                                  {formatDateTime(historyItem.created_at)}
+                                  {historyItem.changedBy}
                                 </span>
                               </div>
 
-                              <div
-                                style={{
-                                  fontSize: '11px',
-                                  lineHeight: '1.3'
-                                }}
-                              >
-                                <div style={{ marginBottom: '3px' }}>
-                                  <span
-                                    style={{
-                                      fontWeight: '500',
-                                      color: '#374151'
-                                    }}
-                                  >
-                                    {historyItem.action.includes('요청')
-                                      ? '요청자:'
-                                      : '처리자:'}
-                                  </span>
-                                  <span
-                                    style={{
-                                      marginLeft: '6px',
-                                      color: '#6b7280'
-                                    }}
-                                  >
-                                    {historyItem.changed_by}
-                                  </span>
-                                </div>
-
-                                <div style={{ marginBottom: '3px' }}>
-                                  <span
-                                    style={{
-                                      fontWeight: '500',
-                                      color: '#374151'
-                                    }}
-                                  >
-                                    사유:
-                                  </span>
-                                  <span
-                                    style={{
-                                      marginLeft: '6px',
-                                      color: '#6b7280'
-                                    }}
-                                  >
-                                    {historyItem.reason}
-                                  </span>
-                                </div>
-
-                                <div>
+                              {/* ✅ 세부사항 - 줄바꿈 처리 */}
+                              <div>
+                                <div style={{ marginBottom: '2px' }}>
                                   <span
                                     style={{
                                       fontWeight: '500',
@@ -2780,19 +2735,32 @@ const handleSave = async (action) => {
                                   >
                                     세부:
                                   </span>
-                                  <span
-                                    style={{
-                                      marginLeft: '6px',
-                                      color: '#6b7280',
-                                      whiteSpace: 'pre-line'
-                                    }}
-                                  >
-                                    {historyItem.details || '상세 정보 없음'}
-                                  </span>
+                                </div>
+                                <div style={{ paddingLeft: '6px' }}>
+                                  {historyItem.descriptionItems && historyItem.descriptionItems.length > 0 ? (
+                                    historyItem.descriptionItems.map((item: string, idx: number) => (
+                                      <div
+                                        key={idx}
+                                        style={{
+                                          color: '#6b7280',
+                                          marginBottom: '2px',
+                                          lineHeight: '1.4'
+                                        }}
+                                      >
+                                        {item}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div style={{ color: '#6b7280' }}>
+                                      {historyItem.description}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                          ))}
+                          </div>
+                        ))}
+
                         </div>
                       )}
                     </div>

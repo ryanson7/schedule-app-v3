@@ -478,18 +478,31 @@ export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps)
     if (!hasAccess) return;
     
     console.log('🎯 카드 클릭 - 모달 열기:', schedule);
+    console.log('🔍 시간 필드 확인:', {
+      start_time: schedule.start_time,
+      end_time: schedule.end_time,
+      course_name: schedule.course_name,
+      course_code: schedule.course_code
+    });
     
     const modalData = {
-      mode: 'edit',
+      mode: 'edit' as const,
       date: schedule.shoot_date,
       locationId: schedule.sub_location_id,
-      scheduleData: schedule,
-      shootingTypeMapping
+      scheduleData: {
+        ...schedule,
+        professor_category_name: schedule.professor_category_name || schedule.professor_category?.name
+      },
+      shootingTypeMapping,
+      locations: studioLocations
     };
+    
+    console.log('📦 모달 데이터:', modalData);
     
     setModalData(modalData);
     setModalOpen(true);
   };
+
 
   const handleCellDrop = useCallback((date: string, location: any, draggedData: any) => {
     console.log('🎯 드롭 처리 시작:', { date, location: location.name, draggedData });
@@ -717,169 +730,391 @@ export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps)
     return { success: true, message: '취소 승인이 완료되었습니다.' };
   };
 
-  // 🔥 스케줄 수정 함수
-  const updateSchedule = async (updateData: any, adminName: string) => {
+// 🔥 스케줄 수정 함수
+const updateSchedule = async (updateData: any, adminName: string) => {
+  const scheduleId = modalData.scheduleData.id;
+
+  const { error } = await supabase
+    .from('schedules')
+    .update(updateData)
+    .eq('id', scheduleId);
+    
+  if (error) {
+    // ✅ alert로 표시하고 함수 종료
+    if (error.message.includes('해당 시간대에 이미 예약된 스케줄이 있습니다')) {
+      alert('⚠️ 시간 중복\n\n해당 시간대에 이미 예약된 스케줄이 있습니다.\n다른 시간을 선택해주세요.');
+    } else {
+      alert(`❌ 수정 실패\n\n${error.message}`);
+    }
+    throw error;
+  }
+
+  // ✅ 변경 내역 분석
+  const oldValue = modalData.scheduleData;
+  const newValue = updateData;
+  
+  const changes: string[] = [];
+  if (oldValue.start_time !== newValue.start_time || oldValue.end_time !== newValue.end_time) {
+    const oldTime = `${oldValue.start_time?.substring(0, 5)}-${oldValue.end_time?.substring(0, 5)}`;
+    const newTime = `${newValue.start_time?.substring(0, 5)}-${newValue.end_time?.substring(0, 5)}`;
+    changes.push(`시간: ${oldTime} → ${newTime}`);
+  }
+  if (oldValue.shooting_type !== newValue.shooting_type) {
+    changes.push(`촬영형식: ${oldValue.shooting_type} → ${newValue.shooting_type}`);
+  }
+  if (oldValue.shoot_date !== newValue.shoot_date) {
+    changes.push(`날짜: ${oldValue.shoot_date} → ${newValue.shoot_date}`);
+  }
+
+  const changeDescription = changes.length > 0 
+    ? `스케줄 수정 [${changes.join(', ')}]`
+    : '스케줄 수정';
+
+  // 🔥 히스토리 기록 (수정 시)
+  const { error: historyError } = await supabase
+    .from('schedule_history')
+    .insert({
+      schedule_id: scheduleId,
+      change_type: 'updated',
+      changed_by: currentUser?.id ?? null,  // ✅ numericId
+      description: changeDescription,  // ✅ 변경 내역 포함
+      old_value: JSON.stringify(oldValue),
+      new_value: JSON.stringify(newValue),
+      change_details: newValue,  // ✅ JSONB
+      changed_at: new Date().toISOString(),
+    });
+
+  if (historyError) {
+    console.error('❌ 수정 History 저장 실패:', historyError);
+  } else {
+    console.log('✅ 수정 History 저장 성공:', scheduleId);
+  }
+  
+  console.log('✅ 스튜디오 스케줄 수정 완료');
+};
+
+// 🔥 스케줄 생성 함수
+const createSchedule = async (scheduleData: any, adminName: string) => {
+  const newScheduleData = {
+    ...scheduleData,
+    schedule_type: 'studio',
+    team_id: 1,
+    is_active: true,
+    created_at: new Date().toISOString()
+  };
+
+  const { data: insertResult, error } = await supabase
+    .from('schedules')
+    .insert([newScheduleData])
+    .select();
+    
+  if (error) {
+    // ✅ alert로 표시
+    if (error.message.includes('해당 시간대에 이미 예약된 스케줄이 있습니다')) {
+      alert('⚠️ 시간 중복\n\n해당 시간대에 이미 예약된 스케줄이 있습니다.\n다른 시간을 선택해주세요.');
+    } else {
+      alert(`❌ 등록 실패\n\n${error.message}`);
+    }
+    throw error;
+  }
+
+  const created = insertResult?.[0];
+
+  if (!created) {
+    alert('❌ 등록 실패\n\n스케줄이 생성되지 않았습니다.');
+    throw new Error('스케줄이 생성되지 않았습니다.');
+  }
+
+  // ✅ change_details 구성
+  const newValueObj = {
+    shoot_date: created.shoot_date,
+    start_time: created.start_time,
+    end_time: created.end_time,
+    shooting_type: created.shooting_type,
+    professor_name: created.professor_name || '',
+    course_name: created.course_name || null,
+  };
+
+  // 🔥 히스토리 기록 (관리자 등록)
+  const { error: historyError } = await supabase
+    .from('schedule_history')
+    .insert({
+      schedule_id: created.id,
+      change_type: 'created',
+      changed_by: currentUser?.id ?? null,
+      old_value: null,
+      new_value: JSON.stringify(newValueObj),
+      description: '관리자 등록',
+      change_details: newValueObj,
+      changed_at: new Date().toISOString(),
+    });
+
+  if (historyError) {
+    console.error('❌ 관리자 등록 History 저장 실패:', historyError);
+  } else {
+    console.log('✅ 관리자 등록 History 저장 성공:', created.id);
+  }
+      
+  console.log('✅ 스튜디오 신규 등록 완료:', insertResult);
+};
+
+
+
+// 🔥 일반 스케줄 작업 처리 함수
+const handleScheduleOperation = async (data: any, action: string, adminName: string) => {
+  // ✅ 필수 필드 검증
+  const requiredFields = {
+    shoot_date: '촬영 날짜',
+    start_time: '시작 시간',
+    end_time: '종료 시간',
+    professor_name: '교수명',
+    sub_location_id: '스튜디오'
+  };
+  
+  for (const [field, label] of Object.entries(requiredFields)) {
+    const value = (data as any)[field];
+    
+    if (value === null || value === undefined || value === '') {
+      alert(`⚠️ 필수 입력\n\n${label}은 필수입니다.`);
+      throw new Error(`${label}은 필수입니다.`);
+    }
+    
+    if (typeof value === 'string' && value.trim() === '') {
+      alert(`⚠️ 필수 입력\n\n${label}을 입력해주세요.`);
+      throw new Error(`${label}을 입력해주세요.`);
+    }
+  }
+  
+  if (data.start_time >= data.end_time) {
+    alert('⚠️ 시간 오류\n\n종료 시간은 시작 시간보다 늦어야 합니다.');
+    throw new Error('종료 시간은 시작 시간보다 늦어야 합니다.');
+  }
+
+  // ✅ 호환성 검사
+  if (data.shooting_type && data.sub_location_id) {
+    if (!isStudioCompatible(parseInt(data.sub_location_id), data.shooting_type)) {
+      const studioName = studioLocations.find(s => s.id === parseInt(data.sub_location_id))?.name;
+      const compatibleStudios = studioLocations.filter(studio => 
+        isStudioCompatible(studio.id, data.shooting_type)
+      );
+      const compatibleNames = compatibleStudios.map(s => `${s.name}번`).join(', ');
+      
+      alert(`⚠️ 호환성 오류\n\n"${data.shooting_type}" 촬영형식은 ${studioName}번 스튜디오에서 지원되지 않습니다.\n\n지원 가능한 스튜디오: ${compatibleNames}`);
+      throw new Error(
+        `호환성 오류: "${data.shooting_type}" 촬영형식은 ${studioName}번 스튜디오에서 지원되지 않습니다.`
+      );
+    }
+  }
+
+  // ✅ 공통 데이터 구성
+  const commonData = {
+    shoot_date: data.shoot_date,
+    start_time: data.start_time,
+    end_time: data.end_time,
+    professor_name: data.professor_name,
+    course_name: data.course_name || '',
+    course_code: data.course_code || '',
+    shooting_type: data.shooting_type || 'PPT',
+    notes: data.notes || '',
+    sub_location_id: parseInt(data.sub_location_id),
+    approval_status: getApprovalStatus(action),
+    approved_at: action === 'approve' ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString()
+  };
+
+  // ✅ 수정 vs 신규 등록
+  if (modalData?.mode === 'edit' && modalData?.scheduleData) {
+    await updateSchedule(commonData, adminName);
+    const message = action === 'approve' ? '수정 및 승인 완료되었습니다.' : '수정 완료되었습니다.';
+    await fetchSchedules();
+    return { success: true, message };
+  } else {
+    await createSchedule(commonData, adminName);
+    const message = action === 'approve' ? '등록 및 승인 완료되었습니다.' : '등록 완료되었습니다.';
+    await fetchSchedules();
+    return { success: true, message };
+  }
+};
+
+// ✅ 스튜디오 스케줄 업데이트 함수 (handleSave 위에 추가)
+const handleStudioScheduleUpdate = async (
+  data: any,
+  action: 'temp' | 'request' | 'approve',
+  adminName: string
+) => {
+  const isEditMode = modalData?.mode === 'edit' && modalData?.scheduleData?.id;
+
+  if (isEditMode) {
+    // ===== 수정 모드 =====
     const scheduleId = modalData.scheduleData.id;
+    const existingSchedule = modalData.scheduleData;
 
-    const { error } = await supabase
-      .from('schedules')
-      .update(updateData)
-      .eq('id', scheduleId);
-      
-    if (error) {
-      throw new Error(`수정 실패: ${error.message}`);
-    }
-
-    // 🔥 히스토리 기록 (수정 시)
-    await supabase
-      .from('schedule_history')
-      .insert({
-        schedule_id: scheduleId,
-        change_type: updateData.approval_status,
-        changed_by: currentUser?.id ?? null, // ✅ numericId
-        description: `스케줄 수정 (수정자: ${adminName})`,
-        old_value: JSON.stringify(modalData.scheduleData),
-        new_value: JSON.stringify(updateData),
-        created_at: new Date().toISOString(),
-        changed_at: new Date().toISOString()
-      });
-    
-    console.log('✅ 스튜디오 스케줄 수정 완료');
-  };
-
-  // 🔥 스케줄 생성 함수
-  const createSchedule = async (scheduleData: any, adminName: string) => {
-    const newScheduleData = {
-      ...scheduleData,
-      schedule_type: 'studio',
-      team_id: 1,
-      is_active: true,
-      created_at: new Date().toISOString()
-    };
-
-    const { data: insertResult, error } = await supabase
-      .from('schedules')
-      .insert([newScheduleData])
-      .select();
-      
-    if (error) {
-      throw new Error(`등록 실패: ${error.message}`);
-    }
-
-    const created = insertResult?.[0];
-
-    // 🔥 히스토리 기록 (신규 등록 시)
-    await supabase
-      .from('schedule_history')
-      .insert({
-        schedule_id: created.id,
-        change_type: 'created',
-        changed_by: currentUser?.id ?? null,  // ✅ numericId
-        description: `스케줄 신규 등록 (등록자: ${getCurrentUserInfo()})`,
-        new_value: JSON.stringify(newScheduleData),
-        created_at: new Date().toISOString(),
-        changed_at: new Date().toISOString()
-      });
-        
-    console.log('✅ 스튜디오 신규 등록 완료:', insertResult);
-  };
-
-  // 🔥 일반 스케줄 작업 처리 함수
-  const handleScheduleOperation = async (data: any, action: string, adminName: string) => {
-    // ✅ 필수 필드 검증
-    const requiredFields = {
-      shoot_date: '촬영 날짜',
-      start_time: '시작 시간',
-      end_time: '종료 시간',
-      professor_name: '교수명',
-      sub_location_id: '스튜디오'
+    // ✅ 변경사항 감지
+    const changes: string[] = [];
+    const changeDetails: any = {
+      schedule_id: scheduleId,
+      changes: []
     };
     
-    for (const [field, label] of Object.entries(requiredFields)) {
-      const value = (data as any)[field];
-      
-      if (value === null || value === undefined || value === '') {
-        throw new Error(`${label}은 필수입니다.`);
-      }
-      
-      if (typeof value === 'string' && value.trim() === '') {
-        throw new Error(`${label}을 입력해주세요.`);
-      }
+    if (data.start_time !== existingSchedule.start_time || data.end_time !== existingSchedule.end_time) {
+      const oldTime = `${existingSchedule.start_time?.substring(0, 5)}-${existingSchedule.end_time?.substring(0, 5)}`;
+      const newTime = `${data.start_time?.substring(0, 5)}-${data.end_time?.substring(0, 5)}`;
+      changes.push(`시간: ${oldTime} → ${newTime}`);
+      changeDetails.changes.push({
+        field: 'time',
+        old_value: oldTime,
+        new_value: newTime
+      });
     }
     
-    if (data.start_time >= data.end_time) {
-      throw new Error('종료 시간은 시작 시간보다 늦어야 합니다.');
+    if (data.shooting_type !== existingSchedule.shooting_type) {
+      changes.push(`촬영형식: ${existingSchedule.shooting_type} → ${data.shooting_type}`);
+      changeDetails.changes.push({
+        field: 'shooting_type',
+        old_value: existingSchedule.shooting_type,
+        new_value: data.shooting_type
+      });
+    }
+    
+    if (data.course_name !== existingSchedule.course_name) {
+      changes.push(`강의명: ${existingSchedule.course_name || '없음'} → ${data.course_name || '없음'}`);
+      changeDetails.changes.push({
+        field: 'course_name',
+        old_value: existingSchedule.course_name || null,
+        new_value: data.course_name || null
+      });
+    }
+    
+    if (data.course_code !== existingSchedule.course_code) {
+      changes.push(`강의코드: ${existingSchedule.course_code || '없음'} → ${data.course_code || '없음'}`);
+      changeDetails.changes.push({
+        field: 'course_code',
+        old_value: existingSchedule.course_code || null,
+        new_value: data.course_code || null
+      });
+    }
+    
+    if (data.notes !== existingSchedule.notes) {
+      changes.push(`메모: ${existingSchedule.notes || '없음'} → ${data.notes || '없음'}`);
+      changeDetails.changes.push({
+        field: 'notes',
+        old_value: existingSchedule.notes || null,
+        new_value: data.notes || null
+      });
     }
 
-    // ✅ 호환성 검사
-    if (data.shooting_type && data.sub_location_id) {
-      if (!isStudioCompatible(parseInt(data.sub_location_id), data.shooting_type)) {
-        const studioName = studioLocations.find(s => s.id === parseInt(data.sub_location_id))?.name;
-        const compatibleStudios = studioLocations.filter(studio => 
-          isStudioCompatible(studio.id, data.shooting_type)
-        );
-        const compatibleNames = compatibleStudios.map(s => `${s.name}번`).join(', ');
-        
-        throw new Error(
-          `호환성 오류: "${data.shooting_type}" 촬영형식은 ${studioName}번 스튜디오에서 지원되지 않습니다.\n\n지원 가능한 스튜디오: ${compatibleNames}`
-        );
-      }
+    // ✅ 변경사항이 없으면 저장하지 않음
+    if (changes.length === 0) {
+      console.log('⚠️ 변경사항 없음');
+      return { success: true, message: '변경사항이 없습니다.' };
     }
 
-    // ✅ 공통 데이터 구성
-    const commonData = {
+    console.log('📝 변경사항:', changes);
+
+    // ✅ 스케줄 업데이트
+    const updateData = {
       shoot_date: data.shoot_date,
       start_time: data.start_time,
       end_time: data.end_time,
       professor_name: data.professor_name,
-      course_name: data.course_name || '',
-      course_code: data.course_code || '',
-      shooting_type: data.shooting_type || 'PPT',
-      notes: data.notes || '',
+      professor_category_id: data.professor_category_id,
+      course_name: data.course_name,
+      course_code: data.course_code,
+      shooting_type: data.shooting_type,
       sub_location_id: parseInt(data.sub_location_id),
-      approval_status: getApprovalStatus(action),
-      approved_at: action === 'approve' ? new Date().toISOString() : null,
+      notes: data.notes,
       updated_at: new Date().toISOString()
     };
 
-    // ✅ 수정 vs 신규 등록
-    if (modalData?.mode === 'edit' && modalData?.scheduleData) {
-      await updateSchedule(commonData, adminName);
-      const message = action === 'approve' ? '수정 및 승인 완료되었습니다.' : '수정 완료되었습니다.';
-      await fetchSchedules();
-      return { success: true, message };
+    const { error: updateError } = await supabase
+      .from('schedules')
+      .update(updateData)
+      .eq('id', scheduleId);
+
+    if (updateError) {
+      console.error('스튜디오 스케줄 수정 실패:', updateError);
+      throw new Error(`수정 실패: ${updateError.message}`);
+    }
+
+    // ✅ 히스토리 저장 (올바른 컬럼명 사용)
+    const historyData = {
+      schedule_id: scheduleId,
+      changed_by: currentUser?.id || null,
+      change_type: '수정됨',  // ✅ action → change_type
+      description: changes.join(', '),  // ✅ reason → description
+      old_value: JSON.stringify({
+        shoot_date: existingSchedule.shoot_date,
+        start_time: existingSchedule.start_time,
+        end_time: existingSchedule.end_time,
+        shooting_type: existingSchedule.shooting_type,
+        course_name: existingSchedule.course_name,
+        course_code: existingSchedule.course_code,
+        notes: existingSchedule.notes
+      }),
+      new_value: JSON.stringify({
+        shoot_date: data.shoot_date,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        shooting_type: data.shooting_type,
+        course_name: data.course_name,
+        course_code: data.course_code,
+        notes: data.notes
+      }),
+      change_details: changeDetails
+    };
+
+    console.log('💾 히스토리 저장:', historyData);
+
+    const { error: historyError } = await supabase
+      .from('schedule_history')
+      .insert([historyData]);
+
+    if (historyError) {
+      console.error('히스토리 저장 실패:', historyError);
     } else {
-      await createSchedule(commonData, adminName);
-      const message = action === 'approve' ? '등록 및 승인 완료되었습니다.' : '등록 완료되었습니다.';
-      await fetchSchedules();
-      return { success: true, message };
+      console.log('✅ 수정 History 저장 성공:', scheduleId);
     }
-  };
 
-  // 🔥 통합된 handleSave 함수
-  const handleSave = async (data: any, action: 'temp' | 'request' | 'approve' | 'cancel_approve') => {
-    try {
-      console.log('💾 스튜디오 스케줄 저장 시작:', { data, action, modalData });
-      
-      const adminName = getCurrentUserInfo();
+    await fetchSchedules();
+    return { success: true, message: '스케줄이 수정되었습니다.' };
 
-      switch (action) {
-        case 'cancel_approve':
-          return await handleCancelApproval(adminName);
-        
-        case 'approve':
-        case 'request':
-        case 'temp':
-        default:
-          return await handleScheduleOperation(data, action, adminName);
-      }
+  } else {
+    // ===== 신규 등록 모드 =====
+    return await handleScheduleOperation(data, action, adminName);
+  }
+};
 
-    } catch (error) {
-      console.error('저장 오류:', error);
-      const message = error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.';
-      return { success: false, message };
+
+// 🔥 통합된 handleSave 함수
+const handleSave = async (
+  data: any,
+  action: 'temp' | 'request' | 'approve' | 'cancel-approve'
+) => {
+  try {
+    console.log('💾 스튜디오 스케줄 저장:', { data, action, modalData });
+
+    const adminName = getCurrentUserInfo();
+
+    switch (action) {
+      case 'cancel-approve':
+        return await handleCancelApproval(adminName);
+      case 'approve':
+      case 'request':
+      case 'temp':
+      default:
+        // ✅ 새로운 통합 처리 로직
+        return await handleStudioScheduleUpdate(data, action, adminName);
     }
-  };
+  } catch (error) {
+    console.error('스튜디오 스케줄 저장 오류:', error);
+    alert(`저장 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+    
+    const message =
+      error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.';
+    return { success: false, message };
+  }
+};
+
 
   const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], reason: string) => {
     console.log('🔧 스케줄 분할 요청:', { scheduleId, splitPoints, reason });

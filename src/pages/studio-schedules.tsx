@@ -1,4 +1,3 @@
-//src/pages/studio-schedules.tsx
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
@@ -144,30 +143,41 @@ const minutesToTime = (minutes: number): string => {
 };
 
 // 네이버웍스 메시지 보내기 함수
-const sendNaverWorksMessage = async (messageType: 'register' | 'modify' | 'cancel' | 'contact', scheduleInfo?: any) => {
+const sendNaverWorksMessage = async (
+  messageType: 'register' | 'modify' | 'cancel' | 'contact',
+  scheduleInfo?: any
+) => {
   try {
+    // ✔ 네이버웍스 알림용 정보는 localStorage 기반으로만 사용
+    const legacyUserName  = localStorage.getItem('userName')  || '';
+    const legacyUserEmail = localStorage.getItem('userEmail') || '';
+    const userPhone       = localStorage.getItem('userPhone') || '';
+
+    // 교수 이름: userName 우선, 없으면 이메일 앞부분, 그래도 없으면 '사용자'
+    const professorName =
+      legacyUserName ||
+      (legacyUserEmail
+        ? legacyUserEmail.split('@')[0]
+        : '사용자');
+
     let message = '';
-    const userName = localStorage.getItem('userName') || '사용자';
-    const userPhone = localStorage.getItem('userPhone') || '';
-    const userEmail = localStorage.getItem('userEmail') || '';
-    
     const currentTime = new Date().toLocaleString('ko-KR');
-    
+
     switch (messageType) {
       case 'register':
-        message = `[스튜디오 촬영 등록 알림]\\n\\n교수명: ${userName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}\\n촬영시간: ${scheduleInfo?.startTime} ~ ${scheduleInfo?.endTime}\\n촬영형식: ${scheduleInfo?.shootingType}${scheduleInfo?.breakTime ? `\\n휴식시간: ${scheduleInfo.breakTime}` : ''}${scheduleInfo?.notes ? `\\n전달사항: ${scheduleInfo.notes}` : ''}\\n\\n새로운 촬영 요청이 등록되었습니다.\\n\\n등록시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
+        message = `[스튜디오 촬영 등록 알림]\\n\\n교수명: ${professorName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}\\n촬영시간: ${scheduleInfo?.startTime} ~ ${scheduleInfo?.endTime}\\n촬영형식: ${scheduleInfo?.shootingType}${scheduleInfo?.breakTime ? `\\n휴식시간: ${scheduleInfo.breakTime}` : ''}${scheduleInfo?.notes ? `\\n전달사항: ${scheduleInfo.notes}` : ''}\\n\\n새로운 촬영 요청이 등록되었습니다.\\n\\n등록시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
         break;
         
       case 'modify':
-        message = `[스튜디오 촬영 수정 알림]\\n\\n교수명: ${userName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}\\n촬영시간: ${scheduleInfo?.startTime} ~ ${scheduleInfo?.endTime}\\n촬영형식: ${scheduleInfo?.shootingType}${scheduleInfo?.breakTime ? `\\n휴식시간: ${scheduleInfo.breakTime}` : ''}${scheduleInfo?.notes ? `\\n전달사항: ${scheduleInfo.notes}` : ''}\\n\\n${scheduleInfo?.isDirectEdit ? '스케줄이 직접 수정되었습니다.' : '스케줄 수정 요청이 접수되었습니다.'}\\n\\n수정시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
+        message = `[스튜디오 촬영 수정 알림]\\n\\n교수명: ${professorName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}\\n촬영시간: ${scheduleInfo?.startTime} ~ ${scheduleInfo?.endTime}\\n촬영형식: ${scheduleInfo?.shootingType}${scheduleInfo?.breakTime ? `\\n휴식시간: ${scheduleInfo.breakTime}` : ''}${scheduleInfo?.notes ? `\\n전달사항: ${scheduleInfo.notes}` : ''}\\n\\n${scheduleInfo?.isDirectEdit ? '스케줄이 직접 수정되었습니다.' : '스케줄 수정 요청이 접수되었습니다.'}\\n\\n수정시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
         break;
         
       case 'cancel':
-        message = `[스튜디오 촬영 취소 알림]\\n\\n교수명: ${userName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}\\n촬영시간: ${scheduleInfo?.startTime} ~ ${scheduleInfo?.endTime}${scheduleInfo?.cancelReason ? `\\n취소 사유: ${scheduleInfo.cancelReason}` : ''}\\n\\n${scheduleInfo?.isRevoke ? '취소 요청이 철회되었습니다.' : '촬영 취소가 요청되었습니다.'}\\n\\n처리시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
+        message = `[스튜디오 촬영 취소 알림]\\n\\n교수명: ${professorName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}\\n촬영시간: ${scheduleInfo?.startTime} ~ ${scheduleInfo?.endTime}${scheduleInfo?.cancelReason ? `\\n취소 사유: ${scheduleInfo.cancelReason}` : ''}\\n\\n${scheduleInfo?.isRevoke ? '취소 요청이 철회되었습니다.' : '촬영 취소가 요청되었습니다.'}\\n\\n처리시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
         break;
         
       case 'contact':
-        message = `[스튜디오 촬영 수정요청]\\n\\n교수명: ${userName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}${scheduleInfo?.startTime && scheduleInfo?.endTime ? `\\n촬영시간: ${scheduleInfo.startTime} ~ ${scheduleInfo.endTime}` : ''}\\n\\n수정이 필요한 스케줄입니다. 확인 부탁드립니다.\\n\\n요청시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
+        message = `[스튜디오 촬영 수정요청]\\n\\n교수명: ${professorName} 교수님\\n연락처: ${userPhone}\\n\\n강좌명: ${scheduleInfo?.courseName || '미입력'}\\n촬영일: ${scheduleInfo?.date}${scheduleInfo?.startTime && scheduleInfo?.endTime ? `\\n촬영시간: ${scheduleInfo.startTime} ~ ${scheduleInfo.endTime}` : ''}\\n\\n수정이 필요한 스케줄입니다. 확인 부탁드립니다.\\n\\n요청시간: ${currentTime}\\n---\\n에듀윌 스튜디오 촬영 시스템에서 발송`;
         break;
     }
 
@@ -200,6 +210,7 @@ const sendNaverWorksMessage = async (messageType: 'register' | 'modify' | 'cance
     console.error('네이버웍스 메시지 전송 오류:', error);
   }
 };
+
 
 // 가장 빠른 30분 단위 슬롯 3개를 찾아줌
 const findAvailableTimeSlots = (
@@ -618,7 +629,7 @@ export default function StudioSchedulePage() {
   const [studioLocations, setStudioLocations] = useState<any[]>([]);
   const [shootingTypeMappings, setShootingTypeMappings] = useState<any[]>([]);
   const [availableDates, setAvailableDates] = useState<any[]>([]);
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   
   const [searchFilters, setSearchFilters] = useState({
     start_date: '',
@@ -777,6 +788,13 @@ export default function StudioSchedulePage() {
     fetchShootingTypeMappings();
   }, []);
 
+    useEffect(() => {
+  // Supabase Auth 정보가 나중에 로딩될 수 있으므로,
+  // user가 바뀔 때마다 사용자 정보 동기화
+  fetchUserInfo();
+}, [user]);
+
+
   useEffect(() => {
     if (userInfo && showMyRequests) {
       fetchMyRequests(false);
@@ -841,31 +859,65 @@ export default function StudioSchedulePage() {
     }
   };
 
-  const fetchUserInfo = async () => {
-    const userRole = localStorage.getItem('userRole');
-    const userEmail = localStorage.getItem('userEmail');
-    const userName = localStorage.getItem('userName');
-    const userId = localStorage.getItem('userId');
-    
-    console.log('fetchUserInfo 실행 - 권한 확인');
-    
-    if (userRole && userEmail && userName) {
-      setUserRoles([userRole]);
-      
-      const userInfo = {
-        id: parseInt(userId || '0'),
-        name: userName,
-        email: userEmail,
-      };
-      
-      setUserInfo(userInfo);
-      console.log('사용자 정보 설정 완료 - 권한:', userRole);
-    } else {
-      console.log('로그인 정보 부족');
-      setUserRoles([]);
+  const fetchUserInfo = () => {
+    console.log('fetchUserInfo 실행 - localStorage + Auth 병합');
+
+    // 1) 예전에 쓰던 localStorage 값
+    const storedRole  = localStorage.getItem('userRole')  || '';
+    const storedName  = localStorage.getItem('userName')  || '';
+    const storedEmail = localStorage.getItem('userEmail') || '';
+
+    // 2) Supabase Auth 기반 값
+    const authRole  = (user?.user_metadata?.role as string) || '';
+    const authName  = (user?.user_metadata?.name as string) || '';
+    const authEmail = user?.email || '';
+
+    // 3) 최종 이름/이메일 결정
+    //    👉 교수 스케줄 조회/저장에 쓰이는 이름은
+    //       기존 DB에 들어간 값과 맞춰야 하므로
+    //       localStorage 값을 최우선으로 사용
+    const finalName =
+      storedName ||
+      authName ||
+      (authEmail ? authEmail.split('@')[0] : '') ||
+      '사용자';
+
+    const finalEmail =
+      storedEmail ||
+      authEmail ||
+      '';
+
+    // 4) 역할 병합 (중복 제거)
+    const extraRoles =
+      ((user?.user_metadata?.roles as string[]) ?? []).filter(Boolean);
+
+    const mergedRoles = [storedRole, authRole, ...extraRoles].filter(Boolean);
+    const uniqueRoles = Array.from(new Set(mergedRoles));
+
+    // 5) 정보가 정말 아무것도 없으면 초기화
+    if (!finalName && !finalEmail) {
+      console.log('로그인 정보 부족 - 사용자 정보 초기화');
       setUserInfo(null);
+      setUserRoles([]);
+      return;
     }
+
+    const info = {
+      id: user?.id ?? null,
+      name: finalName,
+      email: finalEmail,
+    };
+
+    setUserInfo(info);
+    setUserRoles(uniqueRoles);
+
+    console.log('사용자 정보 설정 완료:', {
+      name: finalName,
+      email: finalEmail,
+      roles: uniqueRoles,
+    });
   };
+
 
   const groupSplitSchedules = (schedules: any[]) => {
     const grouped = schedules.reduce((acc, schedule) => {
@@ -1642,22 +1694,24 @@ const fetchMyRequests = async () => {
 
       console.log('삽입할 스케줄 데이터:', schedules);
 
-      const { data: scheduleResults, error: scheduleError } = await supabase
+      const { data: scheduleResults, error } = await supabase
         .from('schedules')
         .insert(schedules)
         .select();
 
-      if (scheduleError) throw scheduleError;
+      if (error) throw error;
 
       console.log('스케줄 삽입 결과:', scheduleResults);
 
       return {
         success: true,
-        message: formData.break_time_enabled 
-          ? '휴식시간을 포함하여 스케줄이 등록되었습니다' 
-          : '스케줄이 등록되었습니다',
-        scheduleCount: schedules.length
+        message: '스케줄이 등록되었습니다',
+        scheduleCount: scheduleResults?.length ?? 0,
+        // 🔥 여기 추가: 실제로 삽입된 스케줄 row 들
+        schedules: scheduleResults ?? [],
       };
+
+
 
     } catch (error) {
       console.error('스케줄 그룹 생성 오류:', error);
@@ -1771,50 +1825,137 @@ const fetchMyRequests = async () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const submitShootingRequest = async () => {
-    if (!validateForm()) {
-      alert('필수 항목을 모두 입력해주세요');
-      return;
-    }
+const submitShootingRequest = async () => {
+  if (!validateForm()) {
+    alert('필수 항목을 입력해주세요');
+    return;
+  }
 
-    try {
-      const scheduleData = {
-        ...formData,
-        created_by: localStorage.getItem('userName'),
-        created_by_email: localStorage.getItem('userEmail'), 
-        created_by_role: 'professor',
-        handler: localStorage.getItem('userName'),
-        handler_email: localStorage.getItem('userEmail'),
-        handler_role: 'professor',
-        status: 'pending'
-      };
+  try {
+    // 0. 사용자 정보
+    const professorName = localStorage.getItem('userName') || formData.professorname;
+    const professorEmail = localStorage.getItem('userEmail');
 
-      const result = await createScheduleGroup(scheduleData);
+    // 1. professorCategoryId 조회
+    const rawNumericId = localStorage.getItem('userNumericId') || localStorage.getItem('userId');
+    const professorNumericId = rawNumericId ? parseInt(rawNumericId, 10) : null;
+
+    let professorCategoryId: number | null = null;
+    let professorCategoryName: string | undefined;
+
+    if (professorNumericId) {
+    const { data: professorRow, error: professorError } = await supabase
+      .from('professors')
+      .select('user_id, professor_category_id')
+      .eq('user_id', professorNumericId)
+      .maybeSingle();
+
+    if (professorError) {
+      console.warn('⚠️ 교수 정보 조회 실패:', professorError);
+    } else if (professorRow?.professor_category_id) {
+      professorCategoryId = professorRow.professor_category_id;
       
-      alert(result.message);
-
-      await sendNaverWorksMessage('register', {
-        courseName: formData.course_name,
-        date: formData.shoot_date,
-        startTime: formData.start_time,
-        endTime: formData.end_time,
-        shootingType: formData.shooting_type,
-        breakTime: formData.break_time_enabled ? 
-          `${formData.break_start_time} ~ ${formData.break_end_time} (${formData.break_duration_minutes}분)` : '',
-        notes: formData.notes
-      });
-
-      resetForm();
-      if (showMyRequests) {
-        fetchMyRequests(false);
+      // ✅ 컬럼명 수정: category_name
+      const { data: categoryRow } = await supabase
+        .from('professor_categories')
+        .select('category_name')  // ← categoryname에서 변경
+        .eq('id', professorCategoryId)
+        .single();
+      
+      if (categoryRow) {
+        professorCategoryName = categoryRow.category_name;  // ← 이것도 변경
       }
-
-    } catch (error) {
-      console.error('등록 오류:', error);
-      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다';
-      alert('등록 중 오류가 발생했습니다: ' + errorMessage);
     }
-  };
+  }
+
+
+    // 3. 스케줄 데이터 준비
+    const scheduleData = {
+      ...formData,
+      professorname: professorName,
+      professorid: professorNumericId,
+      professorcategoryid: professorCategoryId,
+      professorcategoryname: professorCategoryName,
+      professoritems: [],
+      createdby: professorName,
+      createdbyemail: professorEmail,
+      createdbyrole: 'professor',
+      handler: professorName,
+      handleremail: professorEmail,
+      handlerrole: 'professor',
+      status: 'pending',
+    };
+
+    console.log('📝 스케줄 데이터:', scheduleData);
+
+    // 4. 스케줄 생성
+    const result = await createScheduleGroup(scheduleData);
+    console.log('✅ 스케줄 생성 결과:', result);
+
+    // 5. schedule_history 저장 (✅ 실제 DB 스키마에 맞춤)
+    // submitShootingRequest 함수 내부
+    if (result.success && result.schedules) {
+      const createdByRole = localStorage.getItem('userRole');
+      const isAdminCreated = ['schedule_admin', 'system_admin', 'studio_admin'].includes(createdByRole || '');
+      
+      for (const schedule of result.schedules) {
+        const newValueObj = {
+          shoot_date: schedule.shoot_date,
+          start_time: schedule.start_time,
+          end_time: schedule.end_time,
+          shooting_type: schedule.shooting_type,
+          professor_name: schedule.professor_name,
+          course_name: schedule.course_name || null,
+        };
+
+        const { error: historyError } = await supabase
+          .from('schedule_history')
+          .insert({
+            schedule_id: schedule.id,
+            change_type: 'created',
+            changed_by: professorNumericId,
+            old_value: null,
+            new_value: JSON.stringify(newValueObj),
+            description: isAdminCreated ? '관리자 등록' : '교수 스케줄 요청',  // ✅
+            change_details: newValueObj,
+            changed_at: new Date().toISOString(),
+          });
+
+        if (historyError) {
+          console.error('❌ History 저장 실패:', historyError);
+        }
+      }
+    }
+
+
+    // 6. 메시지 전송
+    await sendNaverWorksMessage('register', {
+      courseName: scheduleData.course_name,
+      date: scheduleData.shoot_date,
+      startTime: scheduleData.start_time,
+      endTime: scheduleData.end_time,
+      shootingType: scheduleData.shooting_type,
+      breakTime: scheduleData.break_time_enabled
+        ? `${scheduleData.break_start_time}-${scheduleData.break_end_time} (${scheduleData.break_duration_minutes}분)`
+        : '',
+      notes: scheduleData.notes,
+    });
+
+    alert(result.message);
+
+    // 7. 폼 초기화
+    resetForm();
+    if (showMyRequests) {
+      fetchMyRequests(false);
+    }
+  } catch (error) {
+    console.error('❌ 촬영 신청 오류:', error);
+    const errorMessage = error instanceof Error ? error.message : '촬영 신청 중 오류가 발생했습니다';
+    alert(errorMessage);
+  }
+};
+
+
 
   const resetForm = () => {
     setFormData({
@@ -2324,18 +2465,56 @@ const fetchMyRequests = async () => {
     );
   };
 
-  const handleDevDateSelect = (selectedDate: string) => {
-    setTestDate(selectedDate);
-  };
+const handleDevDateSelect = (selectedDate: string) => {
+  setTestDate(selectedDate);
+};
 
-  const userRole = localStorage.getItem('userRole');
-  const userEmail = localStorage.getItem('userEmail');
-  const userName = localStorage.getItem('userName');
-  
-  const isLoggedIn = !!(userRole && userEmail && userName);
-  const isAdmin = userRole === 'system_admin' || userRoles.includes('system_admin');
-  const isProfessor = userRole === 'professor' || userRoles.includes('professor');
-  const hasAccess = isAdmin || isProfessor;
+// ✅ Auth + localStorage 둘 다 사용하는 버전
+const legacyUserRole  = localStorage.getItem('userRole')  || '';
+const legacyUserEmail = localStorage.getItem('userEmail') || '';
+const legacyUserName  = localStorage.getItem('userName')  || '';
+
+const authRole  = (user?.user_metadata?.role as string) || '';
+const extraAuthRoles =
+  ((user?.user_metadata?.roles as string[]) ?? []).filter(Boolean);
+
+  // 화면에 보여줄 사용자 이름 (교수님 이름)
+const displayUserName =
+  userInfo?.name ||
+  legacyUserName ||
+  (user?.user_metadata?.name as string) ||
+  (legacyUserEmail
+    ? legacyUserEmail.split('@')[0]
+    : user?.email
+    ? user.email.split('@')[0]
+    : '사용자');
+
+
+// 위에서 setUserRoles로 채워둔 userRoles 까지 포함해서 모두 합치기
+const allRoles = Array.from(
+  new Set([
+    ...userRoles,
+    authRole,
+    ...extraAuthRoles,
+    legacyUserRole,
+  ].filter(Boolean))
+);
+
+const isLoggedIn =
+  !!user ||
+  !!(legacyUserRole && legacyUserEmail && legacyUserName);
+
+// 관리자 권한: system_admin / schedule_admin / manager
+const isAdmin =
+  allRoles.includes('system_admin') ||
+  allRoles.includes('schedule_admin') ||
+  allRoles.includes('manager');
+
+// 교수 권한
+const isProfessor = allRoles.includes('professor');
+
+const hasAccess = isAdmin || isProfessor;
+
 
   if (!isLoggedIn) {
     return (
@@ -2463,7 +2642,7 @@ const fetchMyRequests = async () => {
               color: '#6b7280',
               fontWeight: '500'
             }}>
-              {userName} 교수님
+              {displayUserName} 교수님
             </div>
             <button
               onClick={async () => {
@@ -2516,7 +2695,7 @@ const fetchMyRequests = async () => {
             fontWeight: '600',
             lineHeight: '1.2'
           }}>
-            안녕하세요. {userName} 교수님
+            안녕하세요. {displayUserName} 교수님
           </h1>
           
           <p style={{ 
