@@ -16,7 +16,7 @@ export default function SimpleAuth() {
   const handleLogin = async (email: string, role: string) => {
     // 임시 인증 시스템
     localStorage.setItem('userEmail', email);
-    localStorage.setItem('userRole', role);
+    //localStorage.setItem('userRole', role);
     setCurrentUser(`${email} (${role})`);
     
     // 페이지 새로고침으로 권한 시스템 업데이트

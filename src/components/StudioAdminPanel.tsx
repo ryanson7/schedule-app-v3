@@ -23,6 +23,7 @@ interface StudioAdminPanelProps {
 }
 
 export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps) {
+  const { user } = useAuth();
   const [hasAccess, setHasAccess] = useState(false);
   const [accessLoading, setAccessLoading] = useState(true);
   
@@ -38,7 +39,7 @@ export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps)
   const [modalData, setModalData] = useState<any | null>(null);
 
   const { currentWeek, navigateWeek } = useWeek();
-  const { user } = useAuth(); // fallback 용
+
 
   // --- shooter 표시 유틸 ---
   const getShooterText = (s: any) => {
@@ -712,15 +713,17 @@ export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps)
     }
 
     // 🔥 히스토리 기록 (changed_by = numericId)
+    // ② history에도 description, change_details에 취소사유 남김
     await supabase
-      .from('schedule_history')
+      .from("schedule_history")
       .insert({
         schedule_id: scheduleId,
-        change_type: 'cancelled',
-        changed_by: currentUser?.id ?? null,  // ✅ numericId
-        description: `관리자 취소 승인 (승인자: ${adminName})`,
+        change_type: "cancelled",
+        changed_by: userId,
         old_value: JSON.stringify({ approval_status: modalData.scheduleData.approval_status }),
-        new_value: JSON.stringify({ approval_status: 'cancelled' }),
+        new_value: JSON.stringify({ approval_status: "cancelled" }),
+        description: cancelReason, // ← 이 부분 추가(사유/메모)
+        change_details: { reason: cancelReason, admin: adminName }, // 상세 JSON도 활용 가능
         created_at: new Date().toISOString(),
         changed_at: new Date().toISOString()
       });
@@ -776,7 +779,7 @@ const updateSchedule = async (updateData: any, adminName: string) => {
     .insert({
       schedule_id: scheduleId,
       change_type: 'updated',
-      changed_by: currentUser?.id ?? null,  // ✅ numericId
+      changed_by: userId,  // ✅ numericId
       description: changeDescription,  // ✅ 변경 내역 포함
       old_value: JSON.stringify(oldValue),
       new_value: JSON.stringify(newValue),
@@ -841,7 +844,7 @@ const createSchedule = async (scheduleData: any, adminName: string) => {
     .insert({
       schedule_id: created.id,
       change_type: 'created',
-      changed_by: currentUser?.id ?? null,
+      changed_by: userId,
       old_value: null,
       new_value: JSON.stringify(newValueObj),
       description: '관리자 등록',
@@ -935,113 +938,190 @@ const handleScheduleOperation = async (data: any, action: string, adminName: str
     return { success: true, message };
   }
 };
-
-// ✅ 스튜디오 스케줄 업데이트 함수 (handleSave 위에 추가)
+// ✅ 스튜디오 스케줄 업데이트 함수
 const handleStudioScheduleUpdate = async (
   data: any,
   action: 'temp' | 'request' | 'approve',
   adminName: string
 ) => {
+  // ✅ userId 확보 및 검증
+  const userId = user?.numericId || Number(localStorage.getItem('userNumericId'));
+  
+  if (!userId) {
+    alert('사용자 정보를 찾을 수 없습니다. 다시 로그인해주세요.');
+    console.error('❌ userId 없음:', { 
+      userNumericId: user?.numericId, 
+      localStorage: localStorage.getItem('userNumericId') 
+    });
+    return { success: false, message: '변경자 정보 없음' };
+  }
+  
+  console.log('✅ 사용할 userId:', userId);
+
   const isEditMode = modalData?.mode === 'edit' && modalData?.scheduleData?.id;
+  const scheduleId = modalData?.scheduleData?.id;
+  const existingSchedule = modalData?.scheduleData;
 
+  // ✅ 변경사항 diff 추출 (실제 변경된 것만)
+  const changes: string[] = [];
+  const changeDetails: any = { schedule_id: scheduleId, changes: [] };
+
+// 변경: "시간:분"만 비교하도록 substring(0,5) 적용
+const oldStart = (existingSchedule?.start_time || '').substring(0,5);
+const newStart = (data.start_time || '').substring(0,5);
+if (oldStart !== newStart) {
+  changes.push(`시작시간: ${oldStart} → ${newStart}`);
+  changeDetails.changes.push({
+    field: 'start_time',
+    old_value: existingSchedule.start_time,
+    new_value: data.start_time
+  });
+}
+
+// 종료시간도 동일하게
+const oldEnd = (existingSchedule?.end_time || '').substring(0,5);
+const newEnd = (data.end_time || '').substring(0,5);
+if (oldEnd !== newEnd) {
+  changes.push(`종료시간: ${oldEnd} → ${newEnd}`);
+  changeDetails.changes.push({
+    field: 'end_time',
+    old_value: existingSchedule.end_time,
+    new_value: data.end_time
+  });
+}
+
+  // ✅ 촬영형식 체크
+  if (existingSchedule?.shooting_type !== data.shooting_type) {
+    changes.push(`촬영형식: ${existingSchedule.shooting_type || '없음'} → ${data.shooting_type || '없음'}`);
+    changeDetails.changes.push({ 
+      field: 'shooting_type', 
+      old_value: existingSchedule.shooting_type, 
+      new_value: data.shooting_type 
+    });
+  }
+  
+  // ✅ 강의명 체크
+  if (existingSchedule?.course_name !== data.course_name) {
+    changes.push(`강의명: ${existingSchedule.course_name || '없음'} → ${data.course_name || '없음'}`);
+    changeDetails.changes.push({ 
+      field: 'course_name', 
+      old_value: existingSchedule.course_name || null, 
+      new_value: data.course_name || null 
+    });
+  }
+  
+  // ✅ 강의코드 체크
+  if (existingSchedule?.course_code !== data.course_code) {
+    changes.push(`강의코드: ${existingSchedule.course_code || '없음'} → ${data.course_code || '없음'}`);
+    changeDetails.changes.push({ 
+      field: 'course_code', 
+      old_value: existingSchedule.course_code || null, 
+      new_value: data.course_code || null 
+    });
+  }
+  
+  // ✅ 메모 체크
+  if (existingSchedule?.notes !== data.notes) {
+    changes.push(`메모: ${existingSchedule.notes || '없음'} → ${data.notes || '없음'}`);
+    changeDetails.changes.push({ 
+      field: 'notes', 
+      old_value: existingSchedule.notes || null, 
+      new_value: data.notes || null 
+    });
+  }
+
+  // ✅ 촬영날짜 체크 (추가)
+  if (existingSchedule?.shoot_date !== data.shoot_date) {
+    changes.push(`촬영날짜: ${existingSchedule.shoot_date} → ${data.shoot_date}`);
+    changeDetails.changes.push({ 
+      field: 'shoot_date', 
+      old_value: existingSchedule.shoot_date, 
+      new_value: data.shoot_date 
+    });
+  }
+
+  // ✅ 교수명 체크 (추가)
+  if (existingSchedule?.professor_name !== data.professor_name) {
+    changes.push(`교수명: ${existingSchedule.professor_name || '없음'} → ${data.professor_name || '없음'}`);
+    changeDetails.changes.push({ 
+      field: 'professor_name', 
+      old_value: existingSchedule.professor_name || null, 
+      new_value: data.professor_name || null 
+    });
+  }
+
+  // ✅ 스튜디오 위치 체크 (추가)
+  if (existingSchedule?.sub_location_id !== parseInt(data.sub_location_id)) {
+    changes.push(`스튜디오: ${existingSchedule.sub_location_id} → ${data.sub_location_id}`);
+    changeDetails.changes.push({ 
+      field: 'sub_location_id', 
+      old_value: existingSchedule.sub_location_id, 
+      new_value: parseInt(data.sub_location_id) 
+    });
+  }
+
+  // ✅ 변경사항 없으면 저장하지 않음 (승인은 예외)
+  if (changes.length === 0 && action !== 'approve') {
+    return { success: true, message: '변경사항이 없습니다.' };
+  }
+
+  console.log('✅ 감지된 변경사항:', changes);
+
+  // ✅ DB 처리 분기
   if (isEditMode) {
-    // ===== 수정 모드 =====
-    const scheduleId = modalData.scheduleData.id;
-    const existingSchedule = modalData.scheduleData;
+    // 1. 승인일 때는 approval_status 별도 처리
+    if (action === 'approve') {
+      const { error: approveError } = await supabase
+        .from('schedules')
+        .update({
+          approval_status: 'approved',
+          approved_by: userId,  // ✅ 검증된 userId 사용
+          approved_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', scheduleId);
 
-    // ✅ 변경사항 감지
-    const changes: string[] = [];
-    const changeDetails: any = {
-      schedule_id: scheduleId,
-      changes: []
-    };
-    
-    if (data.start_time !== existingSchedule.start_time || data.end_time !== existingSchedule.end_time) {
-      const oldTime = `${existingSchedule.start_time?.substring(0, 5)}-${existingSchedule.end_time?.substring(0, 5)}`;
-      const newTime = `${data.start_time?.substring(0, 5)}-${data.end_time?.substring(0, 5)}`;
-      changes.push(`시간: ${oldTime} → ${newTime}`);
-      changeDetails.changes.push({
-        field: 'time',
-        old_value: oldTime,
-        new_value: newTime
-      });
-    }
-    
-    if (data.shooting_type !== existingSchedule.shooting_type) {
-      changes.push(`촬영형식: ${existingSchedule.shooting_type} → ${data.shooting_type}`);
-      changeDetails.changes.push({
-        field: 'shooting_type',
-        old_value: existingSchedule.shooting_type,
-        new_value: data.shooting_type
-      });
-    }
-    
-    if (data.course_name !== existingSchedule.course_name) {
-      changes.push(`강의명: ${existingSchedule.course_name || '없음'} → ${data.course_name || '없음'}`);
-      changeDetails.changes.push({
-        field: 'course_name',
-        old_value: existingSchedule.course_name || null,
-        new_value: data.course_name || null
-      });
-    }
-    
-    if (data.course_code !== existingSchedule.course_code) {
-      changes.push(`강의코드: ${existingSchedule.course_code || '없음'} → ${data.course_code || '없음'}`);
-      changeDetails.changes.push({
-        field: 'course_code',
-        old_value: existingSchedule.course_code || null,
-        new_value: data.course_code || null
-      });
-    }
-    
-    if (data.notes !== existingSchedule.notes) {
-      changes.push(`메모: ${existingSchedule.notes || '없음'} → ${data.notes || '없음'}`);
-      changeDetails.changes.push({
-        field: 'notes',
-        old_value: existingSchedule.notes || null,
-        new_value: data.notes || null
-      });
+      if (approveError) {
+        return { success: false, message: '승인 처리 실패: ' + approveError.message };
+      }
+    } else {
+      // 단순 수정/임시저장/요청 등은 기존대로
+      const updateData = {
+        shoot_date: data.shoot_date,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        professor_name: data.professor_name,
+        professor_category_id: data.professor_category_id,
+        course_name: data.course_name,
+        course_code: data.course_code,
+        shooting_type: data.shooting_type,
+        sub_location_id: parseInt(data.sub_location_id),
+        notes: data.notes,
+        updated_at: new Date().toISOString()
+      };
+      
+      const { error: updateError } = await supabase
+        .from('schedules')
+        .update(updateData)
+        .eq('id', scheduleId);
+
+      if (updateError) {
+        throw new Error(`수정 실패: ${updateError.message}`);
+      }
     }
 
-    // ✅ 변경사항이 없으면 저장하지 않음
-    if (changes.length === 0) {
-      console.log('⚠️ 변경사항 없음');
-      return { success: true, message: '변경사항이 없습니다.' };
-    }
-
-    console.log('📝 변경사항:', changes);
-
-    // ✅ 스케줄 업데이트
-    const updateData = {
-      shoot_date: data.shoot_date,
-      start_time: data.start_time,
-      end_time: data.end_time,
-      professor_name: data.professor_name,
-      professor_category_id: data.professor_category_id,
-      course_name: data.course_name,
-      course_code: data.course_code,
-      shooting_type: data.shooting_type,
-      sub_location_id: parseInt(data.sub_location_id),
-      notes: data.notes,
-      updated_at: new Date().toISOString()
-    };
-
-    const { error: updateError } = await supabase
-      .from('schedules')
-      .update(updateData)
-      .eq('id', scheduleId);
-
-    if (updateError) {
-      console.error('스튜디오 스케줄 수정 실패:', updateError);
-      throw new Error(`수정 실패: ${updateError.message}`);
-    }
-
-    // ✅ 히스토리 저장 (올바른 컬럼명 사용)
+    // 2. 히스토리 기록 (변경사항이 있을 때만 상세 기록)
     const historyData = {
       schedule_id: scheduleId,
-      changed_by: currentUser?.id || null,
-      change_type: '수정됨',  // ✅ action → change_type
-      description: changes.join(', '),  // ✅ reason → description
+      changed_by: userId,  // ✅ 검증된 userId 사용
+      change_type: action === 'approve' ? 'approve' : '수정됨',
+      description: action === 'approve'
+        ? (changes.length > 0 
+          ? `스케줄 승인됨 (변경: ${changes.join(', ')})`
+          : '스케줄 승인됨')
+        : (changes.length > 0 
+          ? changes.join(', ')
+          : '스케줄 수정됨'),
       old_value: JSON.stringify({
         shoot_date: existingSchedule.shoot_date,
         start_time: existingSchedule.start_time,
@@ -1049,7 +1129,9 @@ const handleStudioScheduleUpdate = async (
         shooting_type: existingSchedule.shooting_type,
         course_name: existingSchedule.course_name,
         course_code: existingSchedule.course_code,
-        notes: existingSchedule.notes
+        notes: existingSchedule.notes,
+        professor_name: existingSchedule.professor_name,
+        sub_location_id: existingSchedule.sub_location_id
       }),
       new_value: JSON.stringify({
         shoot_date: data.shoot_date,
@@ -1058,26 +1140,29 @@ const handleStudioScheduleUpdate = async (
         shooting_type: data.shooting_type,
         course_name: data.course_name,
         course_code: data.course_code,
-        notes: data.notes
+        notes: data.notes,
+        professor_name: data.professor_name,
+        sub_location_id: parseInt(data.sub_location_id)
       }),
-      change_details: changeDetails
+      change_details: changeDetails,
+      changed_at: new Date().toISOString()
     };
-
-    console.log('💾 히스토리 저장:', historyData);
 
     const { error: historyError } = await supabase
       .from('schedule_history')
       .insert([historyData]);
 
     if (historyError) {
-      console.error('히스토리 저장 실패:', historyError);
-    } else {
-      console.log('✅ 수정 History 저장 성공:', scheduleId);
+      console.error('❌ 이력 저장 실패:', historyError);
+      return { success: false, message: '이력 저장 실패: ' + historyError.message };
     }
-
+    
     await fetchSchedules();
-    return { success: true, message: '스케줄이 수정되었습니다.' };
 
+    return { 
+      success: true, 
+      message: action === 'approve' ? '스케줄이 승인되었습니다.' : '스케줄이 수정되었습니다.' 
+    };
   } else {
     // ===== 신규 등록 모드 =====
     return await handleScheduleOperation(data, action, adminName);
@@ -1214,7 +1299,7 @@ const handleSave = async (
         .insert({
           schedule_id: scheduleId,
           change_type: 'split',
-          changed_by: currentUser?.id ?? null, // ✅ numericId
+          changed_by: userId, // ✅ numericId
           description: `스케줄 ${segments.length}개로 분할 (사유: ${reason})`,
           old_value: JSON.stringify({ 
             start_time: originalSchedule.start_time, 

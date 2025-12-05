@@ -64,62 +64,62 @@ function MyApp({ Component, pageProps }: AppProps) {
         // 🔧 로그 간소화
         // console.log('🔍 라우팅 체크:', { currentPath, isAuthenticated, userRole, hasSession: !!session });
 
-        // 🔧 간단한 라우팅 처리
-        if (currentPath === '/') {
-          if (isAuthenticated && userRole) {
-            switch (userRole) {
-              case 'system_admin':
-              case 'schedule_admin':
-              case 'systemadmin':
-                safeReplace('/admin');
-                break;
-              case 'academy_manager':
-                safeReplace('/academy-schedules');
-                break;
-              case 'studio_manager':
-                safeReplace('/studio-schedules');
-                break;
-              case 'shooter':
-                safeReplace('/shooter/ShooterDashboard');
-                break;
-              case 'professor':
-                safeReplace('/professor-categories');
-                break;
-              default:
-                safeReplace('/admin');
-            }
-          } else {
-            safeReplace('/login');
-          }
-        } 
-        // 로그인 페이지에서 이미 인증된 경우
-        else if (currentPath === '/login') {
-          if (isAuthenticated && userRole) {
-            switch (userRole) {
-              case 'system_admin':
-              case 'schedule_admin':
-              case 'systemadmin':
-                safeReplace('/admin');
-                break;
-              case 'academy_manager':
-                safeReplace('/academy-schedules');
-                break;
-              case 'studio_manager':
-                safeReplace('/studio-schedules');
-                break;
-              case 'shooter':
-                safeReplace('/shooter/ShooterDashboard');
-                break;
-              case 'professor':
-                safeReplace('/professor-categories');
-                break;
-              default:
-                safeReplace('/admin');
-            }
-          }
-        }
+        // // 🔧 간단한 라우팅 처리
+        // if (currentPath === '/') {
+        //   if (isAuthenticated && userRole) {
+        //     switch (userRole) {
+        //       case 'system_admin':
+        //       case 'schedule_admin':
+        //       case 'systemadmin':
+        //         safeReplace('/admin');
+        //         break;
+        //       case 'academy_manager':
+        //         safeReplace('/academy-schedules');
+        //         break;
+        //       case 'studio_manager':
+        //         safeReplace('/studio-schedules');
+        //         break;
+        //       case 'shooter':
+        //         safeReplace('/shooter/ShooterDashboard');
+        //         break;
+        //       case 'professor':
+        //         safeReplace('/professor-categories');
+        //         break;
+        //       default:
+        //         safeReplace('/admin');
+        //     }
+        //   } else {
+        //     safeReplace('/login');
+        //   }
+        // } 
+        // // 로그인 페이지에서 이미 인증된 경우
+        // else if (currentPath === '/login') {
+        //   if (isAuthenticated && userRole) {
+        //     switch (userRole) {
+        //       case 'system_admin':
+        //       case 'schedule_admin':
+        //       case 'systemadmin':
+        //         safeReplace('/admin');
+        //         break;
+        //       case 'academy_manager':
+        //         safeReplace('/academy-schedules');
+        //         break;
+        //       case 'studio_manager':
+        //         safeReplace('/studio-schedules');
+        //         break;
+        //       case 'shooter':
+        //         safeReplace('/shooter/ShooterDashboard');
+        //         break;
+        //       case 'professor':
+        //         safeReplace('/professor-categories');
+        //         break;
+        //       default:
+        //         safeReplace('/admin');
+        //     }
+        //   }
+        // }
         // 보호 페이지 접근 제어
-        else if (
+        if (
           currentPath !== '/login' && 
           currentPath !== '/auth/first-login' && 
           (!isAuthenticated || !userRole)

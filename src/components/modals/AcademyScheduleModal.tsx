@@ -7,7 +7,8 @@ interface AcademyScheduleModalProps {
   open: boolean;
   onClose: () => void;
   initialData?: any;
-  locations: any[];
+  locations: any[];      // ✅ 부모에서 넘기는 필터된 강의실 목록
+  mainLocations: any[];  // ✅ 타입 보완 (지금은 안 쓰지만 prop으로는 들어옴)
   userRole: string;
   onSave: (
     data: any,
@@ -15,7 +16,7 @@ interface AcademyScheduleModalProps {
       | 'temp'
       | 'request'
       | 'approve'
-      | 'modify_request'  
+      | 'modify_request'
       | 'cancel_request'
       | 'delete_request'
       | 'modify_approve'
@@ -89,6 +90,7 @@ export default function AcademyScheduleModal({
   onClose,
   initialData,
   locations,
+  mainLocations,
   userRole,
   onSave
 }: AcademyScheduleModalProps) {
@@ -98,16 +100,15 @@ export default function AcademyScheduleModal({
   const [userIdLoading, setUserIdLoading] = useState(true);
   const [reasonModalOpen, setReasonModalOpen] = useState(false);
   const [requestType, setRequestType] = useState<'modify' | 'cancel' | 'delete'>('modify');
-  
 
-  const [availableLocations, setAvailableLocations] = useState<any[]>([]);
-  const [locationLoading, setLocationLoading] = useState(false);
+  // ❌ 기존: sub_locations를 다시 불러오던 상태들
+  // const [availableLocations, setAvailableLocations] = useState<any[]>([]);
+  // const [locationLoading, setLocationLoading] = useState(false);
 
-  // 🔥 스튜디오 모달과 동일한 히스토리 상태
+  // ✅ 히스토리 상태 (스튜디오와 동일)
   const [scheduleHistory, setScheduleHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-
 
   // 🔥 시간 포맷 (히스토리용)
   const formatDateTime = (dateTime: string) => {
@@ -120,126 +121,125 @@ export default function AcademyScheduleModal({
     });
   };
 
+  const fetchScheduleHistory = async (scheduleId: number) => {
+    if (!scheduleId) return;
 
-const fetchScheduleHistory = async (scheduleId: number) => {
-  if (!scheduleId) return;
+    setHistoryLoading(true);
 
-  setHistoryLoading(true);
-  
-  try {
-    console.log('학원 히스토리 조회 시작:', scheduleId);
+    try {
+      console.log('학원 히스토리 조회 시작:', scheduleId);
 
-    const { data: historyData, error: historyError } = await supabase
-      .from('schedule_history')
-      .select('*')
-      .eq('schedule_id', scheduleId)
-      .order('created_at', { ascending: false });
+      const { data: historyData, error: historyError } = await supabase
+        .from('schedule_history')
+        .select('*')
+        .eq('schedule_id', scheduleId)
+        .order('created_at', { ascending: false });
 
-    if (historyError) {
-      console.error('히스토리 조회 오류:', historyError);
-    }
+      if (historyError) {
+        console.error('히스토리 조회 오류:', historyError);
+      }
 
-    const { data: scheduleData, error: scheduleError } = await supabase
-      .from('schedules')
-      .select('*')
-      .eq('id', scheduleId)
-      .single();
+      const { data: scheduleData, error: scheduleError } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('id', scheduleId)
+        .single();
 
-    if (scheduleError) {
-      console.error('스케줄 데이터 조회 오류:', scheduleError);
-    }
+      if (scheduleError) {
+        console.error('스케줄 데이터 조회 오류:', scheduleError);
+      }
 
-    // 🔥 1. 모든 changed_by ID 수집
-    const allUserIds = new Set<number>();
-    
-    if (historyData) {
-      historyData.forEach(h => {
-        if (typeof h.changed_by === 'number') {
-          allUserIds.add(h.changed_by);
+      // 🔥 1. 모든 changed_by ID 수집
+      const allUserIds = new Set<number>();
+
+      if (historyData) {
+        historyData.forEach(h => {
+          if (typeof h.changed_by === 'number') {
+            allUserIds.add(h.changed_by);
+          }
+        });
+      }
+
+      // 🔥 2. users 테이블에서 한 번에 조회
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', Array.from(allUserIds));
+
+      const userMap = new Map(users?.map(u => [u.id, u.name]) || []);
+
+      console.log('👥 사용자 매핑:', userMap);
+
+      // 🔥 3. getUserDisplayName 함수
+      const getUserDisplayName = (changedBy: any): string => {
+        if (!changedBy) return '담당자 정보 없음';
+
+        if (typeof changedBy === 'number') {
+          return userMap.get(changedBy) || `ID: ${changedBy}`;
         }
-      });
-    }
 
-    // 🔥 2. users 테이블에서 한 번에 조회
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name')
-      .in('id', Array.from(allUserIds));
+        if (typeof changedBy === 'string' && !isNaN(Number(changedBy))) {
+          const userId = Number(changedBy);
+          return userMap.get(userId) || `ID: ${changedBy}`;
+        }
 
-    const userMap = new Map(users?.map(u => [u.id, u.name]) || []);
-    
-    console.log('👥 사용자 매핑:', userMap);
+        return changedBy;
+      };
 
-    // 🔥 3. getUserDisplayName 함수
-    const getUserDisplayName = (changedBy: any): string => {
-      if (!changedBy) return '담당자 정보 없음';
-      
-      if (typeof changedBy === 'number') {
-        return userMap.get(changedBy) || `ID: ${changedBy}`;
+      const historyMap = new Map<string, any>();
+
+      // 시스템 히스토리 추가 (등록됨)
+      if (scheduleData) {
+        const createdHistory = historyData?.find(h => h.change_type === 'created');
+
+        if (createdHistory) {
+          const creatorName = getUserDisplayName(createdHistory.changed_by);
+
+          historyMap.set(`created_${scheduleData.id}`, {
+            id: `created_${scheduleData.id}`,
+            action: '등록됨',
+            reason: '최초 스케줄 등록',
+            changed_by: creatorName,
+            created_at: scheduleData.created_at,
+            details: `${scheduleData.professor_name} 교수님 스케줄 등록`,
+            source: 'system'
+          });
+        }
       }
-      
-      if (typeof changedBy === 'string' && !isNaN(Number(changedBy))) {
-        const userId = Number(changedBy);
-        return userMap.get(userId) || `ID: ${changedBy}`;
-      }
-      
-      return changedBy;
-    };
 
-    const historyMap = new Map<string, any>();
+      // schedule_history 데이터 병합
+      if (historyData && historyData.length > 0) {
+        historyData.forEach(item => {
+          const userName = getUserDisplayName(item.changed_by);
 
-    // 시스템 히스토리 추가 (등록됨)
-    if (scheduleData) {
-      const createdHistory = historyData?.find(h => h.change_type === 'created');
-      
-      if (createdHistory) {
-        const creatorName = getUserDisplayName(createdHistory.changed_by);
-
-        historyMap.set(`created_${scheduleData.id}`, {
-          id: `created_${scheduleData.id}`,
-          action: '등록됨',
-          reason: '최초 스케줄 등록',
-          changed_by: creatorName,
-          created_at: scheduleData.created_at,
-          details: `${scheduleData.professor_name} 교수님 스케줄 등록`,
-          source: 'system'
-        });
-      }
-    }
-
-    // schedule_history 데이터 병합
-    if (historyData && historyData.length > 0) {
-      historyData.forEach(item => {
-        const userName = getUserDisplayName(item.changed_by);
-
-        historyMap.set(item.id.toString(), {
-          id: item.id.toString(),
-          action: item.change_type === 'approved' || item.change_type === 'approve' ? '승인완료' :
-                  item.change_type === 'cancelled' ? '취소완료' :
-                  item.change_type.toLowerCase() === 'update' ? '수정됨' :
+          historyMap.set(item.id.toString(), {
+            id: item.id.toString(),
+            action: item.change_type === 'approved' || item.change_type === 'approve' ? '승인완료' :
+              item.change_type === 'cancelled' ? '취소완료' :
+                item.change_type.toLowerCase() === 'update' ? '수정됨' :
                   item.change_type === 'created' ? '등록됨' : '처리됨',
-          reason: item.description || '-',
-          changed_by: userName,
-          created_at: item.created_at,
-          details: item.description || '',
-          source: 'history'
+            reason: item.description || '-',
+            changed_by: userName,
+            created_at: item.created_at,
+            details: item.description || '',
+            source: 'history'
+          });
         });
-      });
+      }
+
+      const essentialHistory = Array.from(historyMap.values())
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setScheduleHistory(essentialHistory);
+      console.log('학원 히스토리 조회 완료:', essentialHistory.length, '개');
+
+    } catch (error) {
+      console.error('히스토리 조회 오류:', error);
+      setScheduleHistory([]);
+    } finally {
+      setHistoryLoading(false);
     }
-
-    const essentialHistory = Array.from(historyMap.values())
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    setScheduleHistory(essentialHistory);
-    console.log('학원 히스토리 조회 완료:', essentialHistory.length, '개');
-
-  } catch (error) {
-    console.error('히스토리 조회 오류:', error);
-    setScheduleHistory([]);
-  } finally {
-    setHistoryLoading(false);
-  }
-};
+  };
 
   // 🔥 사용자 ID 조회
   useEffect(() => {
@@ -315,42 +315,42 @@ const fetchScheduleHistory = async (scheduleId: number) => {
     getCurrentUserId();
   }, [open]);
 
-  // 🔥 강의실 로딩
-  useEffect(() => {
-    const fetchLocationData = async () => {
-      if (!open) return;
-      try {
-        setLocationLoading(true);
-        let query = supabase
-          .from('sub_locations')
-          .select(`*, main_locations!inner(*)`)
-          .eq('is_active', true)
-          .eq('main_locations.location_type', 'academy')
-          .order('main_location_id')
-          .order('id');
-
-        const role = localStorage.getItem('userRole') || '';
-        if (role === 'academy_manager') {
-          const assignedAcademyIds = JSON.parse(localStorage.getItem('assignedAcademyIds') || '[]');
-          if (assignedAcademyIds.length > 0) query = query.in('main_location_id', assignedAcademyIds);
-        }
-
-        const { data } = await query;
-        const formatted = (data || []).map((loc: any) => ({
-          ...loc,
-          displayName: `${loc.main_locations?.name ?? ''} - ${loc.name}`,
-          fullName: `${loc.main_locations?.name ?? ''} - ${loc.name}`
-        }));
-        setAvailableLocations(formatted);
-      } catch (e) {
-        console.error('❌ 강의실 데이터 로딩 실패:', e);
-        setAvailableLocations([]);
-      } finally {
-        setLocationLoading(false);
-      }
-    };
-    fetchLocationData();
-  }, [open]);
+  // ❌ 기존: 강의실을 다시 Supabase에서 조회하던 부분
+  // useEffect(() => {
+  //   const fetchLocationData = async () => {
+  //     if (!open) return;
+  //     try {
+  //       setLocationLoading(true);
+  //       let query = supabase
+  //         .from('sub_locations')
+  //         .select(`*, main_locations!inner(*)`)
+  //         .eq('is_active', true)
+  //         .eq('main_locations.location_type', 'academy')
+  //         .order('main_location_id')
+  //         .order('id');
+  //
+  //       const role = localStorage.getItem('userRole') || '';
+  //       if (role === 'academy_manager') {
+  //         const assignedAcademyIds = JSON.parse(localStorage.getItem('assignedAcademyIds') || '[]');
+  //         if (assignedAcademyIds.length > 0) query = query.in('main_location_id', assignedAcademyIds);
+  //       }
+  //
+  //       const { data } = await query;
+  //       const formatted = (data || []).map((loc: any) => ({
+  //         ...loc,
+  //         displayName: `${loc.main_locations?.name ?? ''} - ${loc.name}`,
+  //         fullName: `${loc.main_locations?.name ?? ''} - ${loc.name}`
+  //       }));
+  //       setAvailableLocations(formatted);
+  //     } catch (e) {
+  //       console.error('❌ 강의실 데이터 로딩 실패:', e);
+  //       setAvailableLocations([]);
+  //     } finally {
+  //       setLocationLoading(false);
+  //     }
+  //   };
+  //   fetchLocationData();
+  // }, [open]);
 
   // 🔥 초기 폼 데이터
   const getInitValue = (v: any): string => (v === null || v === undefined ? '' : String(v).trim());
@@ -460,13 +460,12 @@ const fetchScheduleHistory = async (scheduleId: number) => {
   // 🔥 히스토리 로딩 트리거 (스튜디오와 동일 패턴)
   const isEditMode = !!(initialData?.scheduleData && initialData.scheduleData.id);
   useEffect(() => {
-  if (isEditMode && initialData?.scheduleData?.id && open) {
-    fetchScheduleHistory(initialData.scheduleData.id);
-  } else {
-    setScheduleHistory([]);
-  }
-}, [isEditMode, initialData?.scheduleData?.id, open]);
-
+    if (isEditMode && initialData?.scheduleData?.id && open) {
+      fetchScheduleHistory(initialData.scheduleData.id);
+    } else {
+      setScheduleHistory([]);
+    }
+  }, [isEditMode, initialData?.scheduleData?.id, open]);
 
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
@@ -540,97 +539,96 @@ const fetchScheduleHistory = async (scheduleId: number) => {
     );
   };
 
-// 🔥 저장
-const handleSave = async (action: string, reason?: string) => {
-  if (userIdLoading) {
-    setMessage('사용자 정보를 확인하는 중입니다. 잠시만 기다려주세요.');
-    return;
-  }
-  if (!currentUserId) {
-    setMessage('사용자 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요.');
-    return;
-  }
-
-  setSaving(true);
-  setMessage('');
-
-  try {
-    const emptyFields = validateFieldsForAction(action);
-    if (emptyFields.length > 0) {
-      const names = emptyFields.map(f => f.label).join(', ');
-      throw new Error(`다음 필수 필드를 입력해주세요: ${names}`);
+  // 🔥 저장
+  const handleSave = async (action: string, reason?: string) => {
+    if (userIdLoading) {
+      setMessage('사용자 정보를 확인하는 중입니다. 잠시만 기다려주세요.');
+      return;
+    }
+    if (!currentUserId) {
+      setMessage('사용자 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해주세요.');
+      return;
     }
 
-    // ✅ 현재 로그인한 담당자 이름
-    const currentUserName =
-      localStorage.getItem('userName') ||
-      localStorage.getItem('displayName') ||
-      '';
+    setSaving(true);
+    setMessage('');
 
-    // ✅ 액션별로 schedules 테이블에 들어갈 담당자 정보 세팅
-    const userMeta: any = {};
+    try {
+      const emptyFields = validateFieldsForAction(action);
+      if (emptyFields.length > 0) {
+        const names = emptyFields.map(f => f.label).join(', ');
+        throw new Error(`다음 필수 필드를 입력해주세요: ${names}`);
+      }
 
-    // 신규 등록 or 최초 승인 시 → 등록자 정보
-    if (!isEditMode && ['temp', 'request', 'approve'].includes(action)) {
-      userMeta.created_by_id = currentUserId;
-      userMeta.created_by_name = currentUserName;
+      // ✅ 현재 로그인한 담당자 이름
+      const currentUserName =
+        localStorage.getItem('userName') ||
+        localStorage.getItem('displayName') ||
+        '';
+
+      // ✅ 액션별로 schedules 테이블에 들어갈 담당자 정보 세팅
+      const userMeta: any = {};
+
+      // 신규 등록 or 최초 승인 시 → 등록자 정보
+      if (!isEditMode && ['temp', 'request', 'approve'].includes(action)) {
+        userMeta.created_by_id = currentUserId;
+        userMeta.created_by_name = currentUserName;
+      }
+
+      // 승인 관련 액션 → 승인자 정보
+      if (['approve', 'modify_approve', 'approve_modification'].includes(action)) {
+        userMeta.approved_by_id = currentUserId;
+        userMeta.approved_by_name = currentUserName;
+      }
+
+      // 취소 관련 액션 → 취소 처리자 정보
+      if (['cancel', 'cancel_approve'].includes(action)) {
+        userMeta.cancelled_by_id = currentUserId;
+        userMeta.cancelled_by_name = currentUserName;
+      }
+
+      // 삭제 관련 액션 → 삭제 처리자 정보(필요하다면)
+      if (['delete', 'delete_approve'].includes(action)) {
+        userMeta.deleted_by_id = currentUserId;
+        userMeta.deleted_by_name = currentUserName;
+      }
+
+      const formDataWithUser = {
+        ...formData,
+
+        // ✅ 히스토리용 처리자 정보 (schedule_history용)
+        changed_by: currentUserId,
+        changed_by_name: currentUserName,
+
+        // ✅ schedules 담당자 메타 정보
+        ...userMeta,
+
+        // 기존 필드들 유지
+        currentUserId: currentUserId,
+        reason: reason || '',
+        schedule_id: initialData?.scheduleData?.id || null,
+        professor_category_name: selectedProfessorInfo?.category_name || null,
+        professor_category_id: selectedProfessorInfo?.id || null,
+      };
+
+      console.log('💾 저장 시도:', { action, currentUserId, formDataWithUser });
+      const result = await onSave(formDataWithUser, action as any);
+      setMessage(result.message);
+
+      if (result.success) {
+        alert(result.message);
+        onClose();
+        setMessage('');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '처리 중 오류가 발생했습니다.';
+      setMessage(msg);
+      alert(msg);
+      console.error('저장 오류:', e);
+    } finally {
+      setSaving(false);
     }
-
-    // 승인 관련 액션 → 승인자 정보
-    if (['approve', 'modify_approve', 'approve_modification'].includes(action)) {
-      userMeta.approved_by_id = currentUserId;
-      userMeta.approved_by_name = currentUserName;
-    }
-
-    // 취소 관련 액션 → 취소 처리자 정보
-    if (['cancel', 'cancel_approve'].includes(action)) {
-      userMeta.cancelled_by_id = currentUserId;
-      userMeta.cancelled_by_name = currentUserName;
-    }
-
-    // 삭제 관련 액션 → 삭제 처리자 정보(필요하다면)
-    if (['delete', 'delete_approve'].includes(action)) {
-      userMeta.deleted_by_id = currentUserId;
-      userMeta.deleted_by_name = currentUserName;
-    }
-
-    const formDataWithUser = {
-      ...formData,
-
-      // ✅ 히스토리용 처리자 정보 (schedule_history용)
-      changed_by: currentUserId,
-      changed_by_name: currentUserName,
-
-      // ✅ schedules 담당자 메타 정보
-      ...userMeta,
-
-      // 기존 필드들 유지
-      currentUserId: currentUserId,
-      reason: reason || '',
-      schedule_id: initialData?.scheduleData?.id || null,
-      professor_category_name: selectedProfessorInfo?.category_name || null,
-      professor_category_id: selectedProfessorInfo?.id || null,
-    };
-
-    console.log('💾 저장 시도:', { action, currentUserId, formDataWithUser });
-    const result = await onSave(formDataWithUser, action as any);
-    setMessage(result.message);
-
-    if (result.success) {
-      alert(result.message);
-      onClose();
-      setMessage('');
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : '처리 중 오류가 발생했습니다.';
-    setMessage(msg);
-    alert(msg);
-    console.error('저장 오류:', e);
-  } finally {
-    setSaving(false);
-  }
-};
-
+  };
 
   const handleRequestWithReason = (reason: string) => {
     setReasonModalOpen(false);
@@ -650,11 +648,23 @@ const handleSave = async (action: string, reason?: string) => {
   const timeOptions = generateTimeOptions();
   const academyShootingTypes = ['촬영', '중계', '(본사)촬영', '라이브촬영', '라이브중계', '(NAS)촬영'];
 
+  // ✅ 이제는 부모에서 넘겨준 locations만 사용
   const getSafeLocationOptions = () => {
     const base = [{ value: '', label: '강의실 선택' }];
-    if (locationLoading) return [...base, { value: 'loading', label: '강의실 정보 로딩 중...' }];
-    if (!availableLocations || availableLocations.length === 0) return [...base, { value: 'no-data', label: '강의실 정보 없음 (관리자 문의)' }];
-    const locs = availableLocations.map((l: any) => ({ value: String(l.id), label: l.displayName || l.fullName || l.name || `강의실 ${l.id}` }));
+
+    if (!locations || locations.length === 0) {
+      return [...base, { value: 'no-data', label: '강의실 정보 없음 (관리자 문의)' }];
+    }
+
+    const locs = locations.map((l: any) => ({
+      value: String(l.id),
+      label:
+        l.displayName ||
+        l.fullName ||
+        (l.main_locations?.name ? `${l.main_locations.name} - ${l.name}` : l.name) ||
+        `강의실 ${l.id}`,
+    }));
+
     return [...base, ...locs];
   };
 
@@ -1063,16 +1073,15 @@ const handleSave = async (action: string, reason?: string) => {
                 <div style={{ marginBottom: 20 }}>
                   <label style={{ display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 600, color: '#374151' }}>
                     강의실 <span style={{ color: '#ef4444' }}>*</span>
-                    {locationLoading && <span style={{ color: '#6b7280', fontSize: 12, marginLeft: 8 }}>(로딩 중...)</span>}
                   </label>
                   <select
                     value={formData.sub_location_id}
                     onChange={(e) => handleChange('sub_location_id', e.target.value)}
-                    disabled={fieldDisabled || locationLoading}
-                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, outline: 'none', backgroundColor: (fieldDisabled || locationLoading) ? '#f9fafb' : 'white' }}
+                    disabled={fieldDisabled}
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, outline: 'none', backgroundColor: fieldDisabled ? '#f9fafb' : 'white' }}
                   >
                     {getSafeLocationOptions().map(opt => (
-                      <option key={opt.value} value={opt.value} disabled={opt.value === 'loading' || opt.value === 'no-data'}>
+                      <option key={opt.value} value={opt.value} disabled={opt.value === 'no-data'}>
                         {opt.label}
                       </option>
                     ))}

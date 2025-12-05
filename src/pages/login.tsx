@@ -1,9 +1,10 @@
-// pages/login.tsx - 촬영자 로그인 문제 해결
+// pages/login.tsx - 촬영자/교수/매니저 로그인 문제 해결 버전
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../utils/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { phoneToEmail, detectLoginType } from '../utils/phoneToEmail';
+import { DbUserRole, ManagerType } from '../types/users';
 import { getRedirectPath } from '../utils/roleRedirection';
 
 // 시스템 상태 체크 (점검 모드 등)
@@ -23,14 +24,14 @@ const useSystemStatus = () => {
     try {
       // 🔧 system_settings 테이블이 없으므로 기본값 사용
       console.log('⚠️ system_settings 체크 생략, 기본값 사용');
-      setSystemStatus({ 
-        loginEnabled: true, 
-        maintenanceMode: false 
+      setSystemStatus({
+        loginEnabled: true,
+        maintenanceMode: false,
       });
     } catch (error) {
-      setSystemStatus({ 
-        loginEnabled: true, 
-        maintenanceMode: false 
+      setSystemStatus({
+        loginEnabled: true,
+        maintenanceMode: false,
       });
     }
     setLoading(false);
@@ -43,7 +44,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { systemStatus, loading: systemLoading } = useSystemStatus();
-  
+
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -51,22 +52,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loginAttempts, setLoginAttempts] = useState(0);
 
-  // 이미 로그인된 사용자 리다이렉트
+  // 이미 로그인된 사용자 리다이렉트 (실제 리다이렉트는 AuthContext에서 처리하므로 여기서는 아무 것도 안 함)
   useEffect(() => {
     if (!authLoading && !systemLoading && user) {
-      const userRole = localStorage.getItem('userRole');
-      if (userRole) {
-        const redirectPath = getRedirectPath(userRole);
-        router.replace(redirectPath);
-      }
+      // noop
     }
-  }, [user, authLoading, systemLoading, router]);
+  }, [user, authLoading, systemLoading]);
 
-  // pages/login.tsx의 handleLogin 함수 - phoneToEmail 올바른 사용
+  // 로그인 처리
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loginAttempts >= 3) return;
-    
+
     setLoading(true);
     setError('');
 
@@ -75,16 +72,16 @@ export default function LoginPage() {
 
       const isPhone = detectLoginType(identifier) === 'phone';
       let email = identifier.trim();
-      let userData = null;
-      
+      let userData: any = null;
+
       if (isPhone) {
-        // 🔧 전화번호일 경우 두 도메인 모두 시도 (올바른 phoneToEmail 사용)
+        // 🔧 전화번호일 경우 두 도메인 모두 시도
         const shooterEmail = phoneToEmail(identifier, 'shooter');
         const professorEmail = phoneToEmail(identifier, 'professor');
-        
+
         console.log('📧 이메일 후보들:', { shooterEmail, professorEmail });
 
-        // 1. 먼저 촬영자 이메일로 시도
+        // 1. 촬영자 이메일로 시도
         try {
           const { data: shooterUser, error: shooterError } = await supabase
             .from('users')
@@ -158,8 +155,7 @@ export default function LoginPage() {
       if (authError) {
         console.error('❌ Supabase 인증 실패:', authError);
         setLoginAttempts(prev => prev + 1);
-        
-        // 🔧 구체적인 에러 메시지
+
         if (authError.message.includes('Invalid login credentials')) {
           if (userData.role === 'shooter') {
             setError('비밀번호가 올바르지 않습니다. 초기 비밀번호는 "eduwill1234!"입니다.');
@@ -187,7 +183,7 @@ export default function LoginPage() {
       // 🔧 사용자 정보를 localStorage에 직접 저장
       localStorage.setItem('userEmail', authData.user.email!);
       localStorage.setItem('userName', userData.name || userData.email.split('@')[0]);
-      localStorage.setItem('userRole', userData.role);
+      //localStorage.setItem('userRole', userData.role);
       localStorage.setItem('isAuthenticated', 'true');
 
       // 🔧 추가 정보도 저장
@@ -198,32 +194,18 @@ export default function LoginPage() {
       console.log('✅ 사용자 정보 저장 완료:', {
         email: authData.user.email,
         name: userData.name,
-        role: userData.role
+        role: userData.role,
       });
 
-      // 🔧 역할에 따른 리다이렉트
-      let redirectPath = '/';
-      switch (userData.role) {
-        case 'system_admin':
-        case 'schedule_admin':
-        case 'manager':
-          redirectPath = '/admin';
-          break;
-        case 'shooter':
-          redirectPath = '/shooter/ShooterDashboard';
-          break;
-        case 'professor':
-          redirectPath = '/studio-schedules';
-          break;
-        default:
-          redirectPath = '/';
-      }
+      // 🔧 역할/매니저타입 기반 리다이렉트 (AuthContext / roleRedirection과 동일 규칙)
+      const dbRole = userData.role as DbUserRole;
+      const managerType = (localStorage.getItem('managerType') || undefined) as ManagerType | undefined;
 
-      console.log('🔄 리다이렉트:', redirectPath);
+      const redirectPath = getRedirectPath(dbRole, managerType);
+      console.log('🔄 리다이렉트:', redirectPath, { dbRole, managerType });
 
       // 🔧 강제 리다이렉트
       window.location.href = redirectPath;
-
     } catch (error: any) {
       console.error('❌ 로그인 처리 중 오류:', error);
       setLoginAttempts(prev => prev + 1);
@@ -233,30 +215,31 @@ export default function LoginPage() {
     }
   };
 
-
   // 시스템 상태 확인 중
   if (systemLoading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        flexDirection: 'column',
-        gap: '16px',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          border: '4px solid rgba(255, 255, 255, 0.3)',
-          borderTop: '4px solid white',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
-        <p style={{ color: 'white', fontSize: '16px', fontWeight: '500' }}>
-          시스템 상태 확인 중...
-        </p>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'column',
+          gap: '16px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        }}
+      >
+        <div
+          style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid rgba(255, 255, 255, 0.3)',
+            borderTop: '4px solid white',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+          }}
+        />
+        <p style={{ color: 'white', fontSize: '16px', fontWeight: '500' }}>시스템 상태 확인 중...</p>
       </div>
     );
   }
@@ -264,24 +247,25 @@ export default function LoginPage() {
   // 시스템 점검 중
   if (systemStatus && (!systemStatus.loginEnabled || systemStatus.maintenanceMode)) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        flexDirection: 'column',
-        gap: '20px',
-        background: '#f8fafc'
-      }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'column',
+          gap: '20px',
+          background: '#f8fafc',
+        }}
+      >
         <div style={{ fontSize: '24px', color: '#ef4444', fontWeight: '600' }}>
           {systemStatus.maintenanceMode ? '시스템 점검 중' : '로그인 일시 중단'}
         </div>
         <div style={{ fontSize: '16px', color: '#64748b', textAlign: 'center' }}>
-          {systemStatus.message || 
-           (systemStatus.maintenanceMode 
-             ? '현재 시스템 점검 중입니다. 잠시 후 다시 이용해주세요.'
-             : '로그인 서비스가 일시 중단되었습니다.'
-           )}
+          {systemStatus.message ||
+            (systemStatus.maintenanceMode
+              ? '현재 시스템 점검 중입니다. 잠시 후 다시 이용해주세요.'
+              : '로그인 서비스가 일시 중단되었습니다.')}
         </div>
         <button
           onClick={() => window.location.reload()}
@@ -292,7 +276,7 @@ export default function LoginPage() {
             border: 'none',
             borderRadius: '8px',
             fontSize: '16px',
-            cursor: 'pointer'
+            cursor: 'pointer',
           }}
         >
           새로고침
@@ -304,62 +288,70 @@ export default function LoginPage() {
   // 인증 확인 중
   if (authLoading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        flexDirection: 'column',
-        gap: '16px',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          border: '4px solid rgba(255, 255, 255, 0.3)',
-          borderTop: '4px solid white',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
-        <p style={{ color: 'white', fontSize: '16px', fontWeight: '500' }}>
-          인증 상태 확인 중...
-        </p>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'column',
+          gap: '16px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        }}
+      >
+        <div
+          style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid rgba(255, 255, 255, 0.3)',
+            borderTop: '4px solid white',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+          }}
+        />
+        <p style={{ color: 'white', fontSize: '16px', fontWeight: '500' }}>인증 상태 확인 중...</p>
       </div>
     );
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#f8fafc',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px'
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '16px',
-        padding: '40px',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.15)',
-        width: '100%',
-        maxWidth: '440px'
-      }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: '#f8fafc',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: 'white',
+          borderRadius: '16px',
+          padding: '40px',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.15)',
+          width: '100%',
+          maxWidth: '440px',
+        }}
+      >
         {/* 로고 섹션 */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div style={{
-            width: '140px',
-            height: '50px', 
-            margin: '0 auto 12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <img 
-              src="https://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg" 
+          <div
+            style={{
+              width: '140px',
+              height: '50px',
+              margin: '0 auto 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <img
+              src="https://img.eduwill.net/Img2/Common/BI/type2/live/logo.svg"
               alt="에듀윌 로고"
               style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-              onError={(e) => {
+              onError={e => {
                 e.currentTarget.style.display = 'none';
                 const textLogo = document.createElement('div');
                 textLogo.textContent = 'EDUWILL';
@@ -370,32 +362,33 @@ export default function LoginPage() {
               }}
             />
           </div>
-          
-          <h1 style={{
-            fontSize: '24px',
-            fontWeight: '700',
-            color: '#1f2937',
-            margin: '0 0 8px 0'
-          }}>
+
+          <h1
+            style={{
+              fontSize: '24px',
+              fontWeight: '700',
+              color: '#1f2937',
+              margin: '0 0 8px 0',
+            }}
+          >
             촬영스케줄 통합 관리 시스템
           </h1>
-          <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>
-            이메일 또는 전화번호로 로그인하세요
-          </p>
+          <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>이메일 또는 전화번호로 로그인하세요</p>
         </div>
-
 
         {/* 오류 메시지 */}
         {error && (
-          <div style={{
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            marginBottom: '20px',
-            color: '#dc2626',
-            fontSize: '14px'
-          }}>
+          <div
+            style={{
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              marginBottom: '20px',
+              color: '#dc2626',
+              fontSize: '14px',
+            }}
+          >
             ⚠️ {error}
           </div>
         )}
@@ -403,19 +396,21 @@ export default function LoginPage() {
         <form onSubmit={handleLogin}>
           {/* 이메일/전화번호 */}
           <div style={{ marginBottom: '24px' }}>
-            <label style={{
-              display: 'block',
-              marginBottom: '8px',
-              fontWeight: '600',
-              color: '#374151',
-              fontSize: '14px'
-            }}>
+            <label
+              style={{
+                display: 'block',
+                marginBottom: '8px',
+                fontWeight: '600',
+                color: '#374151',
+                fontSize: '14px',
+              }}
+            >
               이메일 또는 전화번호
             </label>
             <input
               type="text"
               value={identifier}
-              onChange={(e) => {
+              onChange={e => {
                 setIdentifier(e.target.value);
                 if (error) setError('');
               }}
@@ -429,27 +424,29 @@ export default function LoginPage() {
                 borderRadius: '8px',
                 fontSize: '16px',
                 outline: 'none',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
               }}
             />
           </div>
 
           {/* 비밀번호 */}
           <div style={{ marginBottom: '32px' }}>
-            <label style={{
-              display: 'block',
-              marginBottom: '8px',
-              fontWeight: '600',
-              color: '#374151',
-              fontSize: '14px'
-            }}>
+            <label
+              style={{
+                display: 'block',
+                marginBottom: '8px',
+                fontWeight: '600',
+                color: '#374151',
+                fontSize: '14px',
+              }}
+            >
               비밀번호
             </label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => {
+                onChange={e => {
                   setPassword(e.target.value);
                   if (error) setError('');
                 }}
@@ -463,7 +460,7 @@ export default function LoginPage() {
                   borderRadius: '8px',
                   fontSize: '16px',
                   outline: 'none',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
                 }}
               />
               <button
@@ -478,7 +475,7 @@ export default function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  fontSize: '18px'
+                  fontSize: '18px',
                 }}
               >
                 {showPassword ? '👁️' : '🙈'}
@@ -493,13 +490,15 @@ export default function LoginPage() {
             style={{
               width: '100%',
               padding: '16px',
-              backgroundColor: loading || !identifier || !password || loginAttempts >= 3 ? '#9ca3af' : '#3b82f6',
+              backgroundColor:
+                loading || !identifier || !password || loginAttempts >= 3 ? '#9ca3af' : '#3b82f6',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
               fontSize: '16px',
               fontWeight: '600',
-              cursor: loading || !identifier || !password || loginAttempts >= 3 ? 'not-allowed' : 'pointer'
+              cursor:
+                loading || !identifier || !password || loginAttempts >= 3 ? 'not-allowed' : 'pointer',
             }}
           >
             {loading ? '로그인 중...' : loginAttempts >= 3 ? '잠시 후 다시 시도하세요' : '로그인'}
@@ -508,17 +507,20 @@ export default function LoginPage() {
 
         {/* 로그인 시도 초과 안내 */}
         {loginAttempts >= 3 && (
-          <div style={{
-            marginTop: '16px',
-            padding: '12px',
-            backgroundColor: '#fef3c7',
-            border: '1px solid #f59e0b',
-            borderRadius: '6px',
-            textAlign: 'center',
-            color: '#92400e',
-            fontSize: '14px'
-          }}>
-            로그인 시도 횟수를 초과했습니다.<br />
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '12px',
+              backgroundColor: '#fef3c7',
+              border: '1px solid #f59e0b',
+              borderRadius: '6px',
+              textAlign: 'center',
+              color: '#92400e',
+              fontSize: '14px',
+            }}
+          >
+            로그인 시도 횟수를 초과했습니다.
+            <br />
             1분 후 다시 시도할 수 있습니다.
           </div>
         )}
@@ -526,8 +528,12 @@ export default function LoginPage() {
 
       <style jsx>{`
         @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
         }
       `}</style>
     </div>

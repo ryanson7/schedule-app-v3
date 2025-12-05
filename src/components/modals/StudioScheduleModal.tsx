@@ -1728,37 +1728,50 @@ const formattedHistory: any[] = historyData
   const [modificationReason, setModificationReason] = useState('');
   const [cancellationReason, setCancellationReason] = useState('');
   
-const handleSave = async (action: 'temp' | 'request' | 'approve') => {
+const handleSave = async (
+  action: 'temp' | 'request' | 'approve' | 'cancel_approve'
+) => {
   try {
-    // ✅ 개선된 시간 변환 함수
+    // 1. "취소"일 때는 별도 분기: 필수입력/시간 체크 생략
+    if (action === 'cancel_approve') {
+      setSaving(true);
+      setMessage('');
+      const result = await onSave(formData, action); // formData 또는 modalData.scheduleData로
+      setMessage(result.message);
+      alert(result.message);
+      onClose();
+      setSaving(false);
+      return;
+    }
+
+    // 2. "예약/수정/승인"일 때는 기존 검증 로직 실행
+
+    // 개선된 시간 변환 함수
     const toMin = (t: string | null | undefined): number => {
       if (!t) return 0;
-      
       const timeStr = String(t).trim();
       const parts = timeStr.split(':');
       if (parts.length < 2) return 0;
-      
       const hours = parseInt(parts[0], 10) || 0;
       const minutes = parseInt(parts[1], 10) || 0;
-      
       return hours * 60 + minutes;
     };
 
-    // ✅ formData state 사용 (실시간 변경사항 반영)
+    // formData state 사용
     const currentScheduleData = {
-      shoot_date: formData.shoot_date,          // ✅ formData 사용
-      start_time: formData.start_time,          // ✅ formData 사용
-      end_time: formData.end_time,              // ✅ formData 사용
+      shoot_date: formData.shoot_date,
+      start_time: formData.start_time,
+      end_time: formData.end_time,
       professor_name: selectedProfessorInfo?.name || formData.professor_name,
       professor_category_id: selectedProfessorInfo?.category_id,
-      course_name: formData.course_name,        // ✅ formData 사용
-      course_code: formData.course_code,        // ✅ formData 사용
-      shooting_type: formData.shooting_type,    // ✅ formData 사용
-      sub_location_id: formData.sub_location_id,// ✅ formData 사용
-      notes: formData.notes                     // ✅ formData 사용
+      course_name: formData.course_name,
+      course_code: formData.course_code,
+      shooting_type: formData.shooting_type,
+      sub_location_id: formData.sub_location_id,
+      notes: formData.notes
     };
 
-    // ✅ 디버깅 로그
+    // 디버깅 로그
     console.log('🔍 시간 검증:', {
       'formData.start_time': formData.start_time,
       'formData.end_time': formData.end_time,
@@ -1768,16 +1781,16 @@ const handleSave = async (action: 'temp' | 'request' | 'approve') => {
       end_min: toMin(currentScheduleData.end_time)
     });
 
-    // ✅ 필수 입력 검증
+    // 필수 입력 검증
     if (!currentScheduleData.start_time || !currentScheduleData.end_time) {
       alert('⚠️ 필수 입력\n\n시작 시간과 종료 시간을 입력해 주세요.');
       return;
     }
 
-    // ✅ 시간 검증
+    // 시간 검증
     const startMin = toMin(currentScheduleData.start_time);
     const endMin = toMin(currentScheduleData.end_time);
-    
+
     if (endMin <= startMin) {
       alert(
         `⚠️ 시간 오류\n\n` +
@@ -1798,7 +1811,7 @@ const handleSave = async (action: 'temp' | 'request' | 'approve') => {
       return;
     }
 
-    // ✅ 수정 가능 여부 체크
+    // 수정 가능 여부 체크
     if (isEditMode && action !== 'approve') {
       const canEdit = SchedulePolicy.canEditOnline();
       if (!canEdit) {
@@ -1807,7 +1820,7 @@ const handleSave = async (action: 'temp' | 'request' | 'approve') => {
       }
     }
 
-    // ✅ 시간 중복 체크
+    // 시간 중복 체크
     if (conflictDetected) {
       alert('⚠️ 시간 중복\n\n선택하신 시간대에 이미 다른 스케줄이 있습니다.\n시간을 조정해주세요.');
       return;
@@ -1816,13 +1829,13 @@ const handleSave = async (action: 'temp' | 'request' | 'approve') => {
     setSaving(true);
     setMessage('');
 
-    // ✅ onSave 호출 (히스토리는 StudioAdminPanel에서 처리)
+    // onSave 호출 (StudioAdminPanel 등에서 히스토리/실제 DB 처리)
     const result = await onSave(currentScheduleData, action);
-    
+
     setMessage(result.message);
 
     if (result.success) {
-      // ✅ 승인 시 메시지 전송
+      // 승인 완료시 메시지 전송 등 후처리
       if (action === 'approve') {
         const messageText =
           `[스케줄 수정 완료]\n\n` +
@@ -1831,7 +1844,7 @@ const handleSave = async (action: 'temp' | 'request' | 'approve') => {
           `시간: ${currentScheduleData.start_time}~${currentScheduleData.end_time}\n` +
           `처리자: ${effectiveUserName}\n\n` +
           `스케줄이 최종 수정되었습니다.`;
-        
+
         try {
           await fetch('/api/message', {
             method: 'POST',

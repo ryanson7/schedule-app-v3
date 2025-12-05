@@ -70,6 +70,22 @@ export interface TeamAssignment {
   };
 }
 
+// ✅ DB에 실제 저장되는 role 값
+export type DbUserRole =
+  | 'system_admin'
+  | 'schedule_admin'
+  | 'manager'
+  | 'shooter'
+  | 'professor'
+  | 'staff';
+
+// ✅ managers.manager_type 값
+export type ManagerType =
+  | 'shooting_manager'
+  | 'academy_manager'
+  | 'online_manager';
+
+
 // 열거형 타입들
 export type UserRoleType =
   | 'system_admin'      // 시스템 관리자
@@ -329,3 +345,27 @@ export interface BulkOperationResult {
   failed_count: number;
   errors: string[];
 }
+
+// ✅ DB users.role + managers.manager_type → 논리적 UserRoleType 변환
+export const mapDbRoleToUserRole = (
+  dbRole: DbUserRole,
+  managerType?: ManagerType | null
+): UserRoleType => {
+  // 시스템 / 스케줄 관리자
+  if (dbRole === 'system_admin' || dbRole === 'schedule_admin') {
+    return dbRole;
+  }
+
+  // manager 인 경우 manager_type으로 세부 구분
+  if (dbRole === 'manager') {
+    if (managerType === 'academy_manager') return 'academy_manager';
+    if (managerType === 'online_manager') return 'online_manager';
+    // 촬영매니저는 권한 체크에서 따로 처리할 거라, 여기서는 그냥 manager로 둠
+    if (managerType === 'shooting_manager') return 'manager';
+    return 'manager';
+  }
+
+  // 나머지는 그대로
+  return dbRole as UserRoleType;
+};
+

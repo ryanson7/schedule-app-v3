@@ -1,4 +1,3 @@
-//src/components/AcademyScheduleManager.tsx
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../utils/supabaseClient";
@@ -21,9 +20,17 @@ const academyColors: Record<number, { bg: string; border: string; text: string }
   9: { bg: '#ccfbf1', border: '#14b8a6', text: '#115e59' },
 };
 
-export default function AcademyScheduleManager() {
+type AcademyScheduleManagerProps = {
+  currentUserRole?: string;      // 페이지에서 넘겨줄 수 있는 역할(선택)
+  currentUserId?: number | null; // managers.user_id 와 매칭되는 값
+};
+
+export default function AcademyScheduleManager({
+  currentUserRole,
+  currentUserId,
+}: AcademyScheduleManagerProps) {
   const { currentWeek, navigateWeek } = useWeek();
-  
+
   const [schedules, setSchedules] = useState<any[]>([]);
   const [academyLocations, setAcademyLocations] = useState<any[]>([]);
   const [mainLocations, setMainLocations] = useState<any[]>([]);
@@ -31,7 +38,7 @@ export default function AcademyScheduleManager() {
   const [selectedSchedules, setSelectedSchedules] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalData, setModalData] = useState<any>(null);
 
@@ -44,17 +51,19 @@ export default function AcademyScheduleManager() {
   const isProcessingRef = useRef(false);
   const [userRole, setUserRole] = useState<'admin' | 'manager' | 'user'>('user');
 
-  // 🔥 역할 초기화
+  // 🔥 역할 초기화 (localStorage → 내부 표시용만 사용)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const role = localStorage.getItem('userRole') || '';
       const name = localStorage.getItem('userName') || '';
       let normalizedRole: 'admin' | 'manager' | 'user' = 'user';
+
       if (name === 'manager1' || role === 'system_admin' || role === 'schedule_admin') {
         normalizedRole = 'admin';
       } else if (role === 'academy_manager' || role === 'manager' || role === 'studio_manager') {
         normalizedRole = 'manager';
       }
+
       setUserRole(normalizedRole);
     }
   }, []);
@@ -78,250 +87,188 @@ export default function AcademyScheduleManager() {
     }
   }, [currentWeek]);
 
-  const getUserAccessibleAcademies = useCallback(() => {
-    const userName = localStorage.getItem('userName') || '';
-    const role = localStorage.getItem('userRole') || '';
-    if (process.env.NODE_ENV === 'development' && role !== 'academy_manager') {
-      return mainLocations;
-    }
-    if (userName === 'manager1' || role === 'manager1' || role === 'system_admin' || role === 'schedule_admin') {
-      return mainLocations;
-    } else if (role === 'academy_manager') {
-      const assignedAcademyIds = JSON.parse(localStorage.getItem('assignedAcademyIds') || '[]');
-      return mainLocations.filter(academy => assignedAcademyIds.includes(academy.id));
-    }
-    return [];
-  }, [mainLocations]);
-
+  // 🔥 매니저 모드 여부 (필터 숨김 용)
   const isManagerMode = () => (localStorage.getItem('userRole') || '') === 'academy_manager';
 
-// ✅ AcademyScheduleManager.tsx 내부: fetchSchedules 전체 교체
-const fetchSchedules = useCallback(async (
-  locationsOverride?: any[], 
-  mainLocationsOverride?: any[]
-) => {
-  try {
-    // 1) 주간 날짜 생성/검증
-    let weekDates = generateWeekDates();
+  // ✅ 학원 스케줄 조회
+  const fetchSchedules = useCallback(async (
+    locationsOverride?: any[],
+    mainLocationsOverride?: any[]
+  ) => {
+    try {
+      // 1) 주간 날짜 생성/검증
+      let weekDates = generateWeekDates();
 
-    if (!Array.isArray(weekDates) || weekDates.length === 0) {
-      console.error('❌ weekDates 유효성 검증 실패:', weekDates);
-      setSchedules([]);
-      return;
-    }
-    if (Array.isArray(weekDates[0])) {
-      weekDates = weekDates[0] as any[];
-    }
-    if (weekDates.length < 7) {
-      console.error('❌ 최종 길이 부족:', weekDates.length);
-      setSchedules([]);
-      return;
-    }
+      if (!Array.isArray(weekDates) || weekDates.length === 0) {
+        console.error('❌ weekDates 유효성 검증 실패:', weekDates);
+        setSchedules([]);
+        return;
+      }
+      if (Array.isArray(weekDates[0])) {
+        weekDates = weekDates[0] as any[];
+      }
+      if (weekDates.length < 7) {
+        console.error('❌ 최종 길이 부족:', weekDates.length);
+        setSchedules([]);
+        return;
+      }
 
-    const firstDateObj = weekDates[0];
-    const lastDateObj = weekDates[weekDates.length - 1];
+      const firstDateObj = weekDates[0];
+      const lastDateObj = weekDates[weekDates.length - 1];
 
-    if (!firstDateObj?.date || !lastDateObj?.date) {
-      console.error('❌ 날짜 객체 유효성 검증 실패:', { firstDateObj, lastDateObj });
-      setSchedules([]);
-      return;
-    }
+      if (!firstDateObj?.date || !lastDateObj?.date) {
+        console.error('❌ 날짜 객체 유효성 검증 실패:', { firstDateObj, lastDateObj });
+        setSchedules([]);
+        return;
+      }
 
-    const startDate = firstDateObj.date;
-    const endDate = lastDateObj.date;
+      const startDate = firstDateObj.date;
+      const endDate = lastDateObj.date;
 
-    console.log('✅ [학원] 유효한 날짜 범위:', { startDate, endDate });
+      console.log('✅ [학원] 유효한 날짜 범위:', { startDate, endDate });
 
-    // 2) 접근 가능한 학원/강의실 계산
-    const locationsToUse = locationsOverride || academyLocations;
-    const mainLocationsToUse = mainLocationsOverride || mainLocations;
+      // 2) 접근 가능한 학원/강의실 계산
+      const locationsToUse = locationsOverride || academyLocations;
+      const mainLocationsToUse = mainLocationsOverride || mainLocations;
 
-    console.log('🔍 [학원] 사용할 locations:', {
-      locationsCount: locationsToUse.length,
-      mainLocationsCount: mainLocationsToUse.length
-    });
+      console.log('🔍 [학원] 사용할 locations:', {
+        locationsCount: locationsToUse.length,
+        mainLocationsCount: mainLocationsToUse.length
+      });
 
-    const userRole = (typeof window !== 'undefined' && localStorage.getItem('userRole')) || '';
-    let accessibleAcademies = mainLocationsToUse;
+      // 이 시점에서는 이미 fetchData에서 managers 기반 필터링이 되어 있으므로
+      // 여기서는 academyLocations / mainLocations 그대로 사용
+      const accessibleAcademyIds = mainLocationsToUse.map(a => Number(a.id));
+      const accessibleLocationIds = locationsToUse
+        .filter(location => accessibleAcademyIds.includes(Number(location.main_location_id)))
+        .map(location => location.id);
 
-    if (userRole === 'academy_manager') {
-      const assignedAcademyIds = JSON.parse((typeof window !== 'undefined' && localStorage.getItem('assignedAcademyIds')) || '[]');
-      accessibleAcademies = mainLocationsToUse.filter(academy => assignedAcademyIds.includes(academy.id));
-    }
+      console.log('🔍 [학원] 접근 가능한 강의실:', {
+        accessibleAcademyIds,
+        accessibleLocationIds: accessibleLocationIds.length
+      });
 
-    const accessibleAcademyIds = accessibleAcademies.map(academy => Number(academy.id));
-    const accessibleLocationIds = locationsToUse
-      .filter(location => accessibleAcademyIds.includes(Number(location.main_location_id)))
-      .map(location => location.id);
+      if (accessibleLocationIds.length === 0) {
+        console.log('⚠️ 접근 가능한 강의실 없음');
+        setSchedules([]);
+        return;
+      }
 
-    console.log('🔍 [학원] 접근 가능한 강의실:', {
-      accessibleAcademyIds,
-      accessibleLocationIds: accessibleLocationIds.length
-    });
-
-    if (accessibleLocationIds.length === 0) {
-      console.log('⚠️ 접근 가능한 강의실 없음');
-      setSchedules([]);
-      return;
-    }
-
-    // 3) 학원 스케줄 조회 (sub_locations 조인)
-    const { data, error } = await supabase
-      .from('schedules')
-      .select(`
-        *, 
-        sub_locations!inner(
-          id,
-          name,
-          main_location_id, 
-          main_locations!inner(
+      // 3) 학원 스케줄 조회 (sub_locations 조인)
+      const { data, error } = await supabase
+        .from('schedules')
+        .select(`
+          *, 
+          sub_locations!inner(
             id,
             name,
-            location_type
+            main_location_id, 
+            main_locations!inner(
+              id,
+              name,
+              location_type
+            )
           )
-        )
-      `)
-      .eq('schedule_type', 'academy')
-      .in('approval_status', [
-        'pending', 'approval_requested', 'approved', 'confirmed', 
-        'modification_requested', 'modification_approved',
-        'cancellation_requested', 'deletion_requested', 'cancelled'
-      ])
-      .in('sub_location_id', accessibleLocationIds)
-      .gte('shoot_date', startDate)
-      .lte('shoot_date', endDate)
-      .order('shoot_date')
-      .order('start_time');
+        `)
+        .eq('schedule_type', 'academy')
+        .in('approval_status', [
+          'pending', 'approval_requested', 'approved', 'confirmed',
+          'modification_requested', 'modification_approved',
+          'cancellation_requested', 'deletion_requested', 'cancelled'
+        ])
+        .in('sub_location_id', accessibleLocationIds)
+        .gte('shoot_date', startDate)
+        .lte('shoot_date', endDate)
+        .order('shoot_date')
+        .order('start_time');
 
-    if (error) {
-      console.error('🔥 [학원] 스케줄 조회 오류:', error);
-      throw error;
-    }
+      if (error) {
+        console.error('🔥 [학원] 스케줄 조회 오류:', error);
+        throw error;
+      }
 
-    // 4) 필수 필드 검증
-    const validSchedules = (data || []).filter(schedule => 
-      schedule &&
-      schedule.start_time &&
-      schedule.end_time &&
-      schedule.professor_name &&
-      schedule.sub_locations
-    );
+      // 4) 필수 필드 검증
+      const validSchedules = (data || []).filter(schedule =>
+        schedule &&
+        schedule.start_time &&
+        schedule.end_time &&
+        schedule.professor_name &&
+        schedule.sub_locations
+      );
 
-    console.log('✅ [학원] 유효 스케줄 개수:', validSchedules.length);
+      console.log('✅ [학원] 유효 스케줄 개수:', validSchedules.length);
 
-    // 5) 요청자/승인자 프로필(선택) - 기존 로직 유지
-    if (validSchedules.length > 0) {
-      const userIds = [
+      // 5) 요청자/승인자 프로필(선택)
+      if (validSchedules.length > 0) {
+        const userIds = [
+          ...new Set(
+            validSchedules
+              .flatMap(s => [s.requested_by, s.approved_by])
+              .filter(Boolean)
+          )
+        ];
+
+        if (userIds.length > 0) {
+          const { data: users } = await supabase
+            .from('user_profiles')
+            .select('id, name, email')
+            .in('id', userIds as number[]);
+
+          validSchedules.forEach(schedule => {
+            if (schedule.requested_by) {
+              schedule.requested_user = users?.find(u => u.id === schedule.requested_by) || null;
+            }
+            if (schedule.approved_by) {
+              schedule.approved_user = users?.find(u => u.id === schedule.approved_by) || null;
+            }
+          });
+        }
+      }
+
+      // 6) assigned_shooter_id 기반 촬영자 정보
+      const shooterIds = [
         ...new Set(
           validSchedules
-            .flatMap(s => [s.requested_by, s.approved_by])
-            .filter(Boolean)
+            .map(s => s.assigned_shooter_id)
+            .filter((v): v is number => !!v)
         )
       ];
 
-      if (userIds.length > 0) {
-        const { data: users } = await supabase
-          .from('user_profiles')
-          .select('id, name, email')
-          .in('id', userIds as number[]);
+      console.log('🔎 [학원] 배정된 촬영자 ID 수:', shooterIds.length);
 
-        validSchedules.forEach(schedule => {
-          if (schedule.requested_by) {
-            schedule.requested_user = users?.find(u => u.id === schedule.requested_by) || null;
-          }
-          if (schedule.approved_by) {
-            schedule.approved_user = users?.find(u => u.id === schedule.approved_by) || null;
-          }
-        });
-      }
-    }
+      if (shooterIds.length > 0) {
+        const { data: shooterUsers, error: shooterUsersErr } = await supabase
+          .from('users')
+          .select('id, name, phone, role')
+          .in('id', shooterIds);
 
-    // 🔧🔧🔧 PATCH: 여기서부터가 핵심입니다.
-    // 6) assigned_shooter_id 기반으로 users에서 촬영자 프로필을 모아와 붙인다.
-    const shooterIds = [
-      ...new Set(
-        validSchedules
-          .map(s => s.assigned_shooter_id)
-          .filter((v): v is number => !!v)
-      )
-    ];
-
-    console.log('🔎 [학원] 배정된 촬영자 ID 수:', shooterIds.length);
-
-    if (shooterIds.length > 0) {
-      const { data: shooterUsers, error: shooterUsersErr } = await supabase
-        .from('users')
-        .select('id, name, phone, role')
-        .in('id', shooterIds);
-
-      if (shooterUsersErr) {
-        console.error('🔥 [학원] 촬영자 users 조회 오류:', shooterUsersErr);
-      } else {
-        // 각 스케줄에 user_profiles / assigned_shooters 세팅
-        validSchedules.forEach(s => {
-          if (s.assigned_shooter_id) {
-            const u = shooterUsers?.find(x => x.id === s.assigned_shooter_id);
-            if (u) {
-              // UnifiedScheduleCard 폴백에 맞춰 둘 다 채우면 가장 안전
-              s.user_profiles = { id: u.id, name: u.name, phone: u.phone, role: u.role };
-              s.assigned_shooters = [u.name];
+        if (shooterUsersErr) {
+          console.error('🔥 [학원] 촬영자 users 조회 오류:', shooterUsersErr);
+        } else {
+          validSchedules.forEach(s => {
+            if (s.assigned_shooter_id) {
+              const u = shooterUsers?.find(x => x.id === s.assigned_shooter_id);
+              if (u) {
+                s.user_profiles = { id: u.id, name: u.name, phone: u.phone, role: u.role };
+                s.assigned_shooters = [u.name];
+              }
             }
-          }
-        });
+          });
+        }
+      } else {
+        console.log('ℹ️ [학원] 이번 주 배정된 촬영자 없음 (assigned_shooter_id 미설정)');
       }
-    } else {
-      console.log('ℹ️ [학원] 이번 주 배정된 촬영자 없음 (assigned_shooter_id 미설정)');
+
+      // 7) 상태 저장
+      setSchedules(validSchedules);
+      console.log('✅ [학원] 스케줄 세팅 완료 (배정자 매핑 반영)');
+    } catch (error) {
+      console.error('❌ [학원] 스케줄 조회 오류:', error);
+      throw error;
     }
+  }, [academyLocations, mainLocations, generateWeekDates]);
 
-    // 7) 상태 저장
-    setSchedules(validSchedules);
-    console.log('✅ [학원] 스케줄 세팅 완료 (배정자 매핑 반영)');
-
-  } catch (error) {
-    console.error('❌ [학원] 스케줄 조회 오류:', error);
-    throw error;
-  }
-}, [academyLocations, mainLocations, generateWeekDates]);
-
-
-  const fetchAcademyLocations = async () => {
-    const { data, error } = await supabase
-      .from('sub_locations')
-      .select(`*, main_locations!inner(*)`)
-      .eq('is_active', true)
-      .eq('main_locations.location_type', 'academy')
-      .order('main_location_id')
-      .order('id');
-    if (error) throw error;
-    const accessibleAcademies = getUserAccessibleAcademies();
-    const accessibleAcademyIds = accessibleAcademies.map(academy => academy.id);
-    let filteredLocations = (data || []);
-    const role = localStorage.getItem('userRole') || '';
-    if (role === 'academy_manager') {
-      filteredLocations = filteredLocations.filter((loc: any) =>
-        accessibleAcademyIds.includes(loc.main_location_id)
-      );
-    }
-    const formattedLocations = filteredLocations.map((loc: any) => ({
-      ...loc,
-      name: `${loc.main_locations.name} - ${loc.name}`,
-      displayName: `${loc.main_locations.name} - ${loc.name}`
-    }));
-    setAcademyLocations(formattedLocations);
-  };
-
-  const fetchMainLocations = async () => {
-    const { data, error } = await supabase
-      .from('main_locations')
-      .select('*')
-      .eq('is_active', true)
-      .eq('location_type', 'academy')
-      .order('name');
-    if (error) throw error;
-    setMainLocations(data || []);
-  };
-
-  // 🔎 모달에서 사용될 수 있는 촬영자 목록(옵션)
+  // 🔎 모달에서 사용될 촬영자 목록
   const fetchShooters = async () => {
     try {
       const { data, error } = await supabase
@@ -337,61 +284,91 @@ const fetchSchedules = useCallback(async (
     }
   };
 
-  const fetchData = async () => {
-    try {
-      setError(null);
-      setIsLoading(true);
+  // 🔥 managers.main_location_id 기준으로 학원/강의실 필터링
+const fetchData = async () => {
+  try {
+    setError(null);
+    setIsLoading(true);
 
-      const { data: mainLocsData } = await supabase
-        .from('main_locations')
-        .select('*')
-        .eq('is_active', true)
-        .eq('location_type', 'academy')
-        .order('name');
-      const loadedMainLocations = mainLocsData || [];
-      setMainLocations(loadedMainLocations);
+    const roleFromStorage = localStorage.getItem('userRole') || '';
+    const isAcademyManager = roleFromStorage === 'academy_manager';
 
-      const role = localStorage.getItem('userRole') || '';
-      let accessibleAcademies = loadedMainLocations;
-      if (role === 'academy_manager') {
-        const assignedAcademyIds = JSON.parse(localStorage.getItem('assignedAcademyIds') || '[]');
-        accessibleAcademies = loadedMainLocations.filter(academy => assignedAcademyIds.includes(academy.id));
+    let allowedMainLocationIds: number[] = [];
+
+    // 🔥 여기가 하드코딩 [1] 대신 managers 조회 부분
+    if (isAcademyManager && currentUserId) {
+      const { data: managerRows, error: managerErr } = await supabase
+        .from('managers')
+        .select('main_location_id')
+        .eq('user_id', currentUserId)          // managers.user_id = 현재 유저 ID
+        .eq('manager_type', 'academy_manager')
+        .eq('is_active', true);
+
+      if (managerErr) {
+        console.warn('⚠️ managers 조회 오류 (학원 매니저 담당 학원):', managerErr);
+      } else {
+        allowedMainLocationIds = (managerRows || [])
+          .map((m: any) => m.main_location_id)
+          .filter((v: any) => v !== null)
+          .map((v: any) => Number(v));
       }
 
-      const { data: locsData } = await supabase
-        .from('sub_locations')
-        .select(`*, main_locations!inner(*)`)
-        .eq('is_active', true)
-        .eq('main_locations.location_type', 'academy')
-        .order('main_location_id')
-        .order('id');
-
-      let loadedLocations = (locsData || []);
-      const accessibleAcademyIds = accessibleAcademies.map(academy => academy.id);
-      if (role === 'academy_manager') {
-        loadedLocations = loadedLocations.filter((loc: any) =>
-          accessibleAcademyIds.includes(loc.main_location_id)
-        );
-      }
-
-      const formattedLocations = loadedLocations.map((loc: any) => ({
-        ...loc,
-        name: `${loc.main_locations.name} - ${loc.name}`,
-        displayName: `${loc.main_locations.name} - ${loc.name}`
-      }));
-      setAcademyLocations(formattedLocations);
-
-      await fetchShooters(); // 옵션
-      await fetchSchedules(formattedLocations, loadedMainLocations);
-    } catch (e) {
-      console.error('데이터 로딩 오류:', e);
-      setError('데이터를 불러오는데 실패했습니다. 네트워크 연결을 확인해주세요.');
-    } finally {
-      setIsLoading(false);
+      console.log('✅ 학원 매니저 담당 main_location_id 목록:', allowedMainLocationIds);
     }
-  };
 
-  // 🔥 localStorage 변경 감지 → 재조회
+    // 🔻 여긴 그대로 유지 (지금 [1] 넣어서 테스트하던 자리)
+    let mainLocsQuery = supabase
+      .from('main_locations')
+      .select('*')
+      .eq('is_active', true)
+      .eq('location_type', 'academy')
+      .order('name');
+
+    if (isAcademyManager && allowedMainLocationIds.length > 0) {
+      mainLocsQuery = mainLocsQuery.in('id', allowedMainLocationIds);
+    }
+
+    const { data: mainLocsData, error: mainErr } = await mainLocsQuery;
+    if (mainErr) throw mainErr;
+
+    const loadedMainLocations = mainLocsData || [];
+    setMainLocations(loadedMainLocations);
+
+    let locsQuery = supabase
+      .from('sub_locations')
+      .select(`*, main_locations!inner(*)`)
+      .eq('is_active', true)
+      .eq('main_locations.location_type', 'academy')
+      .order('main_location_id')
+      .order('id');
+
+    if (isAcademyManager && allowedMainLocationIds.length > 0) {
+      locsQuery = locsQuery.in('main_location_id', allowedMainLocationIds);
+    }
+
+    const { data: locsData, error: locsErr } = await locsQuery;
+    if (locsErr) throw locsErr;
+
+    const loadedLocations = (locsData || []);
+
+    const formattedLocations = loadedLocations.map((loc: any) => ({
+      ...loc,
+      name: `${loc.main_locations.name} - ${loc.name}`,
+      displayName: `${loc.main_locations.name} - ${loc.name}`
+    }));
+    setAcademyLocations(formattedLocations);
+
+    await fetchShooters();
+    await fetchSchedules(formattedLocations, loadedMainLocations);
+  } catch (e) {
+    console.error('데이터 로딩 오류:', e);
+    setError('데이터를 불러오는데 실패했습니다. 네트워크 연결을 확인해주세요.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+  // 🔥 localStorage 변경 감지 → 재조회 (스케줄 변경용)
   useEffect(() => {
     const handleStorageChange = () => {
       const updatedFlag = localStorage.getItem('schedules_updated');
@@ -412,8 +389,30 @@ const fetchSchedules = useCallback(async (
   }, [fetchSchedules]);
 
   useEffect(() => {
-    if (currentWeek) fetchData();
-  }, [currentWeek]);
+    if (!currentWeek) return;
+
+    // localStorage 기준으로 academy_manager 여부 확인
+    const roleFromStorage =
+      typeof window !== "undefined" ? localStorage.getItem("userRole") || "" : "";
+    const isAcademyManager = roleFromStorage === "academy_manager";
+
+    // ✅ 학원 매니저인데 아직 appUserId(currentUserId)가 없으면 잠깐 대기
+    if (isAcademyManager && !currentUserId) {
+      console.log(
+        "⏸ [학원] academy_manager 이지만 currentUserId 없음 → managers 필터링 대기"
+      );
+      return;
+    }
+
+    console.log(
+      "🔄 [학원] fetchData 실행 - currentWeek:",
+      currentWeek,
+      "currentUserId:",
+      currentUserId
+    );
+    fetchData();
+  }, [currentWeek, currentUserId]);
+
 
   const handleCellClick = (date: string, location: any) => {
     const fallbackLocations = academyLocations.length > 0 ? academyLocations : [];
@@ -454,173 +453,155 @@ const fetchSchedules = useCallback(async (
     setModalData(null);
   };
 
-// 파일: src/components/AcademyScheduleManager.tsx
+  const handleSave = async (
+    payload: any,
+    action:
+      | 'temp'
+      | 'request'
+      | 'approve'
+      | 'modify_request'
+      | 'cancel_request'
+      | 'delete_request'
+      | 'modify_approve'
+      | 'cancel_approve'
+      | 'delete_approve'
+      | 'cancel'
+      | 'delete'
+      | 'cancel_cancel'
+      | 'cancel_delete'
+      | 'approve_modification'
+  ) => {
+    try {
+      const toHHMMSS = (t: string) =>
+        t && t.length === 5 ? `${t}:00` : (t || '');
 
-const handleSave = async (
-  payload: any,
-  action:
-    | 'temp'
-    | 'request'
-    | 'approve'
-    | 'modify_request'
-    | 'cancel_request'
-    | 'delete_request'
-    | 'modify_approve'
-    | 'cancel_approve'
-    | 'delete_approve'
-    | 'cancel'
-    | 'delete'
-    | 'cancel_cancel'
-    | 'cancel_delete'
-    | 'approve_modification'
-) => {
-  try {
-    const toHHMMSS = (t: string) =>
-      t && t.length === 5 ? `${t}:00` : (t || '');
+      const statusMap: Record<string, { approval_status?: string; is_active?: boolean }> = {
+        temp: { approval_status: 'pending', is_active: true },
+        request: { approval_status: 'approval_requested', is_active: true },
+        approve: { approval_status: 'approved', is_active: true },
+        modify_request: { approval_status: 'modification_requested', is_active: true },
+        approve_modification: { approval_status: 'modification_approved', is_active: true },
+        modify_approve: { approval_status: 'approved', is_active: true },
+        cancel_request: { approval_status: 'cancellation_requested', is_active: true },
+        delete_request: { approval_status: 'deletion_requested', is_active: true },
+        cancel_approve: { approval_status: 'cancelled', is_active: false },
+        delete_approve: { approval_status: 'deleted', is_active: false },
+        cancel: { approval_status: 'cancelled', is_active: false },
+        delete: { approval_status: 'deleted', is_active: false },
+        cancel_cancel: {},
+        cancel_delete: {},
+      };
+      const status = statusMap[action] || {};
 
-    // 1) 액션 → 상태 매핑
-    const statusMap: Record<string, { approval_status?: string; is_active?: boolean }> = {
-      temp: { approval_status: 'pending', is_active: true },
-      request: { approval_status: 'approval_requested', is_active: true },
-      approve: { approval_status: 'approved', is_active: true },
-      modify_request: { approval_status: 'modification_requested', is_active: true },
-      approve_modification: { approval_status: 'modification_approved', is_active: true },
-      modify_approve: { approval_status: 'approved', is_active: true },
-      cancel_request: { approval_status: 'cancellation_requested', is_active: true },
-      delete_request: { approval_status: 'deletion_requested', is_active: true },
-      cancel_approve: { approval_status: 'cancelled', is_active: false },
-      delete_approve: { approval_status: 'deleted', is_active: false },
-      cancel: { approval_status: 'cancelled', is_active: false },
-      delete: { approval_status: 'deleted', is_active: false },
-      cancel_cancel: {},      // 요청 철회
-      cancel_delete: {},      // 요청 철회
-    };
-    const status = statusMap[action] || {};
+      const {
+        currentUserId,
+        changed_by,
+        changed_by_name,
+        professor_category_name,
+        professor_category_id,
+        reason,
+        schedule_id,
+        id,
+        ...rest
+      } = payload;
 
-    // 2) 모달에서 넘어온 것들 분해
-    const {
-      currentUserId,
-      changed_by,
-      changed_by_name,
+      const scheduleId =
+        schedule_id || id || payload?.scheduleData?.id || null;
 
-      professor_category_name,
-      professor_category_id,
+      const record: any = {
+        schedule_type: 'academy',
+        shoot_date: rest.shoot_date,
+        start_time: toHHMMSS(rest.start_time),
+        end_time: toHHMMSS(rest.end_time),
+        professor_name: rest.professor_name || '',
+        course_name: rest.course_name || '',
+        course_code: rest.course_code || '',
+        shooting_type: rest.shooting_type || '촬영',
+        sub_location_id: Number(rest.sub_location_id),
+        notes: rest.notes || '',
+        ...(status.approval_status ? { approval_status: status.approval_status } : {}),
+        ...(typeof status.is_active === 'boolean' ? { is_active: status.is_active } : {}),
+      };
 
-      reason,
-      schedule_id,
-      id,
+      if (professor_category_name) record.professor_category_name = professor_category_name;
+      if (professor_category_id) record.professor_category_id = professor_category_id;
 
-      // 나머지 폼 필드들
-      ...rest
-    } = payload;
-
-    const scheduleId =
-      schedule_id || id || payload?.scheduleData?.id || null;
-
-    // 3) schedules에 저장할 기본 레코드
-    const record: any = {
-      schedule_type: 'academy',
-      shoot_date: rest.shoot_date,
-      start_time: toHHMMSS(rest.start_time),
-      end_time: toHHMMSS(rest.end_time),
-      professor_name: rest.professor_name || '',
-      course_name: rest.course_name || '',
-      course_code: rest.course_code || '',
-      shooting_type: rest.shooting_type || '촬영',
-      sub_location_id: Number(rest.sub_location_id),
-      notes: rest.notes || '',
-      ...(status.approval_status ? { approval_status: status.approval_status } : {}),
-      ...(typeof status.is_active === 'boolean' ? { is_active: status.is_active } : {}),
-    };
-
-    // 3-1) 교수 카테고리
-    if (professor_category_name) record.professor_category_name = professor_category_name;
-    if (professor_category_id) record.professor_category_id = professor_category_id;
-
-    // 3-2) 액션별 사유 컬럼
-    if (action === 'modify_request' && reason) {
-      record.modification_reason = reason;
-    }
-    if (action === 'cancel_request' && reason) {
-      record.cancellation_reason = reason;
-    }
-    if (action === 'delete_request' && reason) {
-      record.deletion_reason = reason;
-    }
-
-    // 3-3) 요청자 / 승인자 (DB에 실제 있는 컬럼만 사용)
-    // schedules 테이블에 requested_by, approved_by 가 이미 존재
-    if (currentUserId) {
-      // 승인/변경/취소/삭제 "요청"은 requested_by에 기록
-      if (['request', 'modify_request', 'cancel_request', 'delete_request'].includes(action)) {
-        record.requested_by = currentUserId;
+      if (action === 'modify_request' && reason) {
+        record.modification_reason = reason;
+      }
+      if (action === 'cancel_request' && reason) {
+        record.cancellation_reason = reason;
+      }
+      if (action === 'delete_request' && reason) {
+        record.deletion_reason = reason;
       }
 
-      // 관리자 "승인/처리" 계열은 approved_by에 기록
-      if (
-        ['approve', 'modify_approve', 'approve_modification', 'cancel_approve', 'delete_approve', 'cancel', 'delete']
-          .includes(action)
-      ) {
-        record.approved_by = currentUserId;
+      if (currentUserId) {
+        if (['request', 'modify_request', 'cancel_request', 'delete_request'].includes(action)) {
+          record.requested_by = currentUserId;
+        }
+
+        if (
+          ['approve', 'modify_approve', 'approve_modification', 'cancel_approve', 'delete_approve', 'cancel', 'delete']
+            .includes(action)
+        ) {
+          record.approved_by = currentUserId;
+        }
       }
+
+      let dbRes;
+      if (scheduleId) {
+        dbRes = await supabase
+          .from('schedules')
+          .update(record)
+          .eq('id', scheduleId)
+          .select()
+          .single();
+      } else {
+        dbRes = await supabase
+          .from('schedules')
+          .insert(record)
+          .select()
+          .single();
+      }
+
+      if (dbRes.error) {
+        console.error('❌ 스케줄 저장 실패:', dbRes.error);
+        return { success: false, message: '스케줄 저장 실패' };
+      }
+
+      const saved = dbRes.data;
+      const finalId = saved?.id;
+
+      const historyPayload: any = {
+        schedule_id: finalId,
+        change_type: action,
+        description: reason || '',
+        changed_by: changed_by || currentUserId || null,
+        changed_by_name:
+          changed_by_name ||
+          (typeof window !== 'undefined' && (localStorage.getItem('userName') || localStorage.getItem('displayName'))) ||
+          '',
+        old_value: null,
+        new_value: JSON.stringify(saved || {}),
+      };
+
+      const histRes = await supabase
+        .from('schedule_history')
+        .insert(historyPayload);
+
+      if (histRes.error) {
+        console.warn('⚠️ 히스토리 기록 실패(스케줄은 저장됨):', histRes.error);
+      }
+
+      await fetchSchedules();
+
+      return { success: true, message: '저장되었습니다.' };
+    } catch (err) {
+      console.error('❌ handleSave 오류:', err);
+      return { success: false, message: '저장 중 오류가 발생했습니다.' };
     }
-
-    // 4) DB 쓰기 (insert / update)
-    let dbRes;
-    if (scheduleId) {
-      dbRes = await supabase
-        .from('schedules')
-        .update(record)
-        .eq('id', scheduleId)
-        .select()
-        .single();
-    } else {
-      dbRes = await supabase
-        .from('schedules')
-        .insert(record)
-        .select()
-        .single();
-    }
-
-    if (dbRes.error) {
-      console.error('❌ 스케줄 저장 실패:', dbRes.error);
-      return { success: false, message: '스케줄 저장 실패' };
-    }
-
-    const saved = dbRes.data;
-    const finalId = saved?.id;
-
-    // 5) schedule_history 기록
-    const historyPayload: any = {
-      schedule_id: finalId,
-      change_type: action,
-      description: reason || '',
-      changed_by: changed_by || currentUserId || null,
-      changed_by_name:
-        changed_by_name ||
-        (typeof window !== 'undefined' && (localStorage.getItem('userName') || localStorage.getItem('displayName'))) ||
-        '',
-      old_value: null,
-      new_value: JSON.stringify(saved || {}),
-    };
-
-    const histRes = await supabase
-      .from('schedule_history')
-      .insert(historyPayload);
-
-    if (histRes.error) {
-      console.warn('⚠️ 히스토리 기록 실패(스케줄은 저장됨):', histRes.error);
-    }
-
-    // 6) 화면 갱신
-    await fetchSchedules();
-
-    return { success: true, message: '저장되었습니다.' };
-  } catch (err) {
-    console.error('❌ handleSave 오류:', err);
-    return { success: false, message: '저장 중 오류가 발생했습니다.' };
-  }
-};
+  };
 
   const getScheduleForCell = (date: string, location: any) => {
     try {
@@ -637,7 +618,6 @@ const handleSave = async (
     const isCancelled = schedule.approval_status === 'cancelled' && schedule.is_active === false;
     const locationColor = getLocationColor(schedule.sub_location_id);
 
-    // 🔥 촬영자 이름 문자열 (다중배정 → 단일배정 폴백 → user_profiles 이름 폴백)
     const shooterText =
       (Array.isArray(schedule.assigned_shooters) && schedule.assigned_shooters.length
         ? schedule.assigned_shooters.join(', ')
@@ -685,7 +665,7 @@ const handleSave = async (
               if (checked) setSelectedSchedules([...selectedSchedules, schedule.id]);
               else setSelectedSchedules(selectedSchedules.filter(id => id !== schedule.id));
             }}
-            shooterText={shooterText} // ← 표시 폴백
+            shooterText={shooterText}
             style={{ pointerEvents: 'none' }}
           />
         </div>

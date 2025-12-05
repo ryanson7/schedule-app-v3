@@ -14,27 +14,53 @@ export default function DynamicNavigation() {
   const [userInfo, setUserInfo] = useState({
     name: '로딩중...',
     role: '로딩중...',
-    isLoading: true
+    isLoading: true,
   });
-  const [filteredMenus, setFilteredMenus] = useState([]);
+  const [filteredMenus, setFilteredMenus] = useState<any[]>([]);
+  const [storedUserRole, setStoredUserRole] = useState<string>('staff');
 
   // 🔧 모바일 감지
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    
+
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // 🔧 userRole를 상태로 관리 (localStorage 변화 반영)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const readRole = () => {
+      const role = localStorage.getItem('userRole') || 'staff';
+      setStoredUserRole(role);
+    };
+
+    readRole();
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'userRole') {
+        readRole();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // 🔧 초기 마운트 + userRole 변경 시마다 메뉴 로드
+  useEffect(() => {
+    if (!storedUserRole) return;
+
     setMounted(true);
-    loadUserMenus();
-    
-    // 글로벌 스타일 적용
+    loadUserMenus(storedUserRole);
+
     if (typeof document !== 'undefined') {
       const style = document.createElement('style');
       style.id = 'nav-global-style';
@@ -47,74 +73,77 @@ export default function DynamicNavigation() {
           box-sizing: border-box;
         }
       `;
-      
+
       const existingStyle = document.getElementById('nav-global-style');
       if (existingStyle) existingStyle.remove();
-      
+
       document.head.appendChild(style);
     }
 
-    // 전역 클릭 이벤트 (메뉴 닫기)
     const handleGlobalClick = () => {
       setOpenMenu(null);
       setMobileMenuOpen(false);
     };
     document.addEventListener('click', handleGlobalClick);
-    
+
     return () => {
       document.removeEventListener('click', handleGlobalClick);
     };
-  }, []);
+  }, [storedUserRole]);
 
   // 🔧 역할별 홈 링크 결정
   const getHomeLink = () => {
-    const userRole = localStorage.getItem('userRole');
-    
-    const roleHomePaths = {
-      'shooter': '/shooter/ShooterDashboard',
-      'system_admin': '/admin',
-      'schedule_admin': '/admin',
-      'academy_manager': '/academy-schedules',
-      'studio_manager': '/admin',
-      'online_manager': '/ManagerStudioSchedulePage',
-      'professor': '/admin',
-      'staff': '/admin'
+    const userRole = storedUserRole;
+
+    const roleHomePaths: Record<string, string> = {
+      shooter: '/shooter/ShooterDashboard',
+      system_admin: '/admin',
+      schedule_admin: '/admin',
+      academy_manager: '/academy-schedules',
+      studio_manager: '/admin',
+      online_manager: '/ManagerStudioSchedulePage',
+      professor: '/admin',
+      staff: '/admin',
+      manager: '/admin',
     };
-    
+
     return roleHomePaths[userRole] || '/admin';
   };
 
-  // 사용자 메뉴 로드 (기존과 동일)
-  const loadUserMenus = async () => {
+  // 사용자 메뉴 로드
+  const loadUserMenus = async (roleFromStorage: string) => {
     try {
       console.log('🔍 사용자 메뉴 로딩 시작...');
-      
-      const roleMap = {
-        'system_admin': '시스템 관리자',
-        'schedule_admin': '스케줄 관리자',
-        'academy_manager': '학원 매니저',
-        'studio_manager': '스튜디오 매니저',
-        'online_manager': '온라인 매니저',
-        'professor': '교수',
-        'shooter': '촬영자',
-        'staff': '일반 직원'
+
+      const roleMap: Record<string, string> = {
+        system_admin: '시스템 관리자',
+        schedule_admin: '스케줄 관리자',
+        academy_manager: '학원 매니저',
+        studio_manager: '스튜디오 매니저',
+        online_manager: '온라인 매니저',
+        professor: '교수',
+        shooter: '촬영자',
+        staff: '일반 직원',
+        manager: '매니저',
       };
-      
-      const storedUserRole = localStorage.getItem('userRole') || 'staff';
-      console.log('👤 사용자 역할:', storedUserRole);
-      
-      const userPermissions = await getRolePermissions(storedUserRole);
+
+      const role = roleFromStorage || 'staff';
+      console.log('👤 사용자 역할:', role);
+
+      const userPermissions = await getRolePermissions(role);
       console.log('🔑 사용자 권한:', userPermissions);
-      
+
       const filtered = getFilteredMenus(MENU_CONFIG, userPermissions);
       setFilteredMenus(filtered);
       console.log('📋 필터링된 메뉴:', filtered);
-      
+
       let userName = '사용자';
 
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
         if (user?.email) {
           const { data: userData, error: userError } = await supabase
             .from('users')
@@ -127,10 +156,11 @@ export default function DynamicNavigation() {
             userName = userData.name;
             console.log('✅ DB에서 한글 이름 조회:', userData.name);
           } else {
-            userName = user.user_metadata?.name || 
-                      user.user_metadata?.full_name || 
-                      user.email?.split('@')[0] || 
-                      '사용자';
+            userName =
+              (user.user_metadata as any)?.name ||
+              (user.user_metadata as any)?.full_name ||
+              user.email?.split('@')[0] ||
+              '사용자';
             console.log('⚠️ DB 조회 실패, 기본값 사용:', userName);
           }
         }
@@ -141,39 +171,35 @@ export default function DynamicNavigation() {
 
       setUserInfo({
         name: userName,
-        role: roleMap[storedUserRole] || storedUserRole,
-        isLoading: false
+        role: roleMap[role] || role,
+        isLoading: false,
       });
-      
-      console.log('✅ 사용자 정보 설정 완료:', { name: userName, role: storedUserRole });
-      
+
+      console.log('✅ 사용자 정보 설정 완료:', { name: userName, role });
     } catch (error) {
       console.error('❌ 메뉴 로드 실패:', error);
       setUserInfo({
         name: '오류',
         role: '로드 실패',
-        isLoading: false
+        isLoading: false,
       });
-      
+
       setFilteredMenus([]);
     }
   };
 
   if (!mounted) return null;
 
-  // 메뉴 클릭 핸들러
   const handleMenuClick = (menuId: string) => {
-    setOpenMenu(prev => prev === menuId ? null : menuId);
+    setOpenMenu(prev => (prev === menuId ? null : menuId));
   };
 
-  // 메뉴 아이템 클릭 핸들러
   const handleItemClick = (path: string) => {
     setOpenMenu(null);
     setMobileMenuOpen(false);
     router.push(path);
   };
 
-  // 로그아웃 핸들러
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -186,32 +212,34 @@ export default function DynamicNavigation() {
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: '70px',
-      backgroundColor: '#1f2937',
-      zIndex: 999999,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: isMobile ? '0 16px' : '0 24px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-      borderBottom: '1px solid #374151'
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '70px',
+        backgroundColor: '#1f2937',
+        zIndex: 999999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: isMobile ? '0 16px' : '0 24px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        borderBottom: '1px solid #374151',
+      }}
+    >
       {/* 🔧 로고 - 역할별 링크 */}
-      <div 
-        style={{ 
-          fontSize: isMobile ? '16px' : '20px', 
-          fontWeight: '700', 
-          color: '#ffffff', 
+      <div
+        style={{
+          fontSize: isMobile ? '16px' : '20px',
+          fontWeight: '700',
+          color: '#ffffff',
           cursor: 'pointer',
           userSelect: 'none',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
-          textOverflow: 'ellipsis'
+          textOverflow: 'ellipsis',
         }}
         onClick={() => router.push(getHomeLink())}
       >
@@ -237,18 +265,18 @@ export default function DynamicNavigation() {
                   alignItems: 'center',
                   gap: '6px',
                   transition: 'background-color 0.2s',
-                  userSelect: 'none'
+                  userSelect: 'none',
                 }}
-                onClick={(e) => {
+                onClick={e => {
                   e.stopPropagation();
                   handleMenuClick(menu.id);
                 }}
-                onMouseEnter={(e) => {
+                onMouseEnter={e => {
                   if (openMenu !== menu.id) {
                     (e.currentTarget as HTMLElement).style.backgroundColor = '#374151';
                   }
                 }}
-                onMouseLeave={(e) => {
+                onMouseLeave={e => {
                   if (openMenu !== menu.id) {
                     (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
                   }
@@ -260,7 +288,6 @@ export default function DynamicNavigation() {
                 </span>
               </button>
 
-              {/* 드롭다운 메뉴 */}
               {openMenu === menu.id && menu.children && menu.children.length > 0 && (
                 <div
                   style={{
@@ -276,33 +303,36 @@ export default function DynamicNavigation() {
                     zIndex: 999999,
                     maxHeight: '400px',
                     overflowY: 'auto',
-                    animation: 'slideDown 0.2s ease-out'
+                    animation: 'slideDown 0.2s ease-out',
                   }}
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
                 >
-                  {menu.children.map((item, index) => (
+                  {menu.children.map((item: any, index: number) => (
                     <div
                       key={item.path}
                       style={{
                         padding: '12px 16px',
                         color: router.pathname === item.path ? '#1d4ed8' : '#333',
-                        backgroundColor: router.pathname === item.path ? '#f0f9ff' : 'transparent',
+                        backgroundColor:
+                          router.pathname === item.path ? '#f0f9ff' : 'transparent',
                         cursor: 'pointer',
                         fontSize: '13px',
                         fontWeight: router.pathname === item.path ? '600' : '400',
-                        borderBottom: index < menu.children.length - 1 ? '1px solid #f0f0f0' : 'none',
+                        borderBottom:
+                          index < menu.children.length - 1 ? '1px solid #f0f0f0' : 'none',
                         transition: 'all 0.2s',
-                        userSelect: 'none'
+                        userSelect: 'none',
                       }}
                       onClick={() => handleItemClick(item.path)}
-                      onMouseEnter={(e) => {
+                      onMouseEnter={e => {
                         if (router.pathname !== item.path) {
                           (e.currentTarget as HTMLElement).style.backgroundColor = '#f8f9fa';
                         }
                       }}
-                      onMouseLeave={(e) => {
+                      onMouseLeave={e => {
                         if (router.pathname !== item.path) {
-                          (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                          (e.currentTarget as HTMLElement).style.backgroundColor =
+                            'transparent';
                         }
                       }}
                     >
@@ -314,13 +344,14 @@ export default function DynamicNavigation() {
             </div>
           ))}
 
-          {/* 메뉴가 없을 때 표시 */}
           {filteredMenus.length === 0 && !userInfo.isLoading && (
-            <div style={{ 
-              color: '#9ca3af', 
-              fontSize: '13px',
-              padding: '12px'
-            }}>
+            <div
+              style={{
+                color: '#9ca3af',
+                fontSize: '13px',
+                padding: '12px',
+              }}
+            >
               접근 가능한 메뉴가 없습니다.
             </div>
           )}
@@ -329,19 +360,13 @@ export default function DynamicNavigation() {
 
       {/* 🔧 오른쪽 영역 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '16px' }}>
-        {/* 🔧 데스크톱 사용자 정보 */}
         {!isMobile && (
           <div style={{ textAlign: 'right', color: '#ffffff' }}>
-            <div style={{ fontSize: '14px', fontWeight: '600' }}>
-              {userInfo.name}
-            </div>
-            <div style={{ fontSize: '11px', color: '#9ca3af' }}>
-              {userInfo.role}
-            </div>
+            <div style={{ fontSize: '14px', fontWeight: '600' }}>{userInfo.name}</div>
+            <div style={{ fontSize: '11px', color: '#9ca3af' }}>{userInfo.role}</div>
           </div>
         )}
 
-        {/* 🔧 모바일 햄버거 메뉴 */}
         {isMobile && (
           <button
             style={{
@@ -353,9 +378,9 @@ export default function DynamicNavigation() {
               padding: '8px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
             }}
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
               setMobileMenuOpen(!mobileMenuOpen);
             }}
@@ -364,7 +389,6 @@ export default function DynamicNavigation() {
           </button>
         )}
 
-        {/* 🔧 데스크톱 로그아웃 버튼 */}
         {!isMobile && (
           <button
             style={{
@@ -377,13 +401,13 @@ export default function DynamicNavigation() {
               fontWeight: '500',
               cursor: 'pointer',
               transition: 'background-color 0.2s',
-              userSelect: 'none'
+              userSelect: 'none',
             }}
             onClick={handleLogout}
-            onMouseEnter={(e) => {
+            onMouseEnter={e => {
               (e.currentTarget as HTMLElement).style.backgroundColor = '#b91c1c';
             }}
-            onMouseLeave={(e) => {
+            onMouseLeave={e => {
               (e.currentTarget as HTMLElement).style.backgroundColor = '#dc2626';
             }}
           >
@@ -406,71 +430,80 @@ export default function DynamicNavigation() {
             boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
             zIndex: 999999,
             maxHeight: '400px',
-            overflowY: 'auto'
+            overflowY: 'auto',
           }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
         >
-          {/* 사용자 정보 */}
-          <div style={{
-            padding: '16px',
-            borderBottom: '1px solid #e5e7eb',
-            backgroundColor: '#f8fafc'
-          }}>
-            <div style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '4px' }}>
+          <div
+            style={{
+              padding: '16px',
+              borderBottom: '1px solid #e5e7eb',
+              backgroundColor: '#f8fafc',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#1e293b',
+                marginBottom: '4px',
+              }}
+            >
               {userInfo.name}
             </div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              {userInfo.role}
-            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>{userInfo.role}</div>
           </div>
 
-          {/* 메뉴 항목들 */}
           {filteredMenus.map(menu => (
             <div key={menu.id}>
-              <div style={{
-                padding: '12px 16px',
-                backgroundColor: '#f1f5f9',
-                fontSize: '14px',
-                fontWeight: '600',
-                color: '#374151',
-                borderBottom: '1px solid #e5e7eb'
-              }}>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  backgroundColor: '#f1f5f9',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  borderBottom: '1px solid #e5e7eb',
+                }}
+              >
                 {menu.name}
               </div>
-              {menu.children && menu.children.map(item => (
-                <div
-                  key={item.path}
-                  style={{
-                    padding: '12px 24px',
-                    color: router.pathname === item.path ? '#1d4ed8' : '#333',
-                    backgroundColor: router.pathname === item.path ? '#f0f9ff' : 'transparent',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: router.pathname === item.path ? '600' : '400',
-                    borderBottom: '1px solid #f0f0f0',
-                    userSelect: 'none'
-                  }}
-                  onClick={() => handleItemClick(item.path)}
-                >
-                  {item.name}
-                </div>
-              ))}
+              {menu.children &&
+                menu.children.map((item: any) => (
+                  <div
+                    key={item.path}
+                    style={{
+                      padding: '12px 24px',
+                      color: router.pathname === item.path ? '#1d4ed8' : '#333',
+                      backgroundColor:
+                        router.pathname === item.path ? '#f0f9ff' : 'transparent',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: router.pathname === item.path ? '600' : '400',
+                      borderBottom: '1px solid #f0f0f0',
+                      userSelect: 'none',
+                    }}
+                    onClick={() => handleItemClick(item.path)}
+                  >
+                    {item.name}
+                  </div>
+                ))}
             </div>
           ))}
 
-          {/* 메뉴가 없을 때 */}
           {filteredMenus.length === 0 && !userInfo.isLoading && (
-            <div style={{ 
-              padding: '20px 16px',
-              textAlign: 'center',
-              color: '#9ca3af', 
-              fontSize: '14px'
-            }}>
+            <div
+              style={{
+                padding: '20px 16px',
+                textAlign: 'center',
+                color: '#9ca3af',
+                fontSize: '14px',
+              }}
+            >
               접근 가능한 메뉴가 없습니다.
             </div>
           )}
 
-          {/* 모바일 로그아웃 버튼 */}
           <div style={{ padding: '16px', borderTop: '1px solid #e5e7eb' }}>
             <button
               onClick={handleLogout}
@@ -483,7 +516,7 @@ export default function DynamicNavigation() {
                 borderRadius: '6px',
                 fontSize: '14px',
                 fontWeight: '500',
-                cursor: 'pointer'
+                cursor: 'pointer',
               }}
             >
               로그아웃
@@ -492,7 +525,6 @@ export default function DynamicNavigation() {
         </div>
       )}
 
-      {/* CSS 애니메이션 */}
       <style jsx>{`
         @keyframes slideDown {
           from {

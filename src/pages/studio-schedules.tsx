@@ -1,3 +1,4 @@
+//src/pages/studio-schedules.tsx
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
@@ -1226,14 +1227,14 @@ const fetchMyRequests = async () => {
     try {
       console.log('데이터베이스 업데이트 시작...');
 
-      const { error } = await supabase
-        .from('schedules')
-        .update({
-          approval_status: 'cancellation_requested',
-          notes: schedule.notes ? `${schedule.notes}\n\n[취소사유: ${cancelReason}]` : `[취소사유: ${cancelReason}]`,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', schedule.id);
+      const { error } = 
+        await supabase.from('schedules').update({
+          approval_status: 'cancelled',
+          cancellation_reason: cancelReason,            // ← 취소사유 명확히!
+          cancelled_by: userInfo.id,                    // ← 누가 취소했는지
+          updated_at: new Date().toISOString(),
+          updated_by: userInfo.id
+        }).eq('id', schedule.id);
 
       if (error) {
         console.error('메인 스케줄 업데이트 오류:', error);
@@ -1908,18 +1909,22 @@ const submitShootingRequest = async () => {
           course_name: schedule.course_name || null,
         };
 
-        const { error: historyError } = await supabase
-          .from('schedule_history')
-          .insert({
-            schedule_id: schedule.id,
-            change_type: 'created',
-            changed_by: professorNumericId,
-            old_value: null,
-            new_value: JSON.stringify(newValueObj),
-            description: isAdminCreated ? '관리자 등록' : '교수 스케줄 요청',  // ✅
-            change_details: newValueObj,
-            changed_at: new Date().toISOString(),
-          });
+        const { error: historyError } = 
+        await supabase.from('schedule_history').insert({
+          schedule_id: schedule.id,
+          change_type: 'cancelled',
+          changed_by: userInfo.id,
+          old_value: JSON.stringify(schedule),
+          new_value: JSON.stringify({...schedule, approval_status: 'cancelled'}),
+          description: cancelReason,                    // ← 사유 명확히!
+          change_details: { 
+            reason: cancelReason, 
+            role: userInfo.role, 
+            name: userInfo.name 
+          },
+          created_at: new Date().toISOString(),
+          changed_at: new Date().toISOString()
+        });
 
         if (historyError) {
           console.error('❌ History 저장 실패:', historyError);

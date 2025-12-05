@@ -103,7 +103,7 @@ export const loginProfessor = async (phone: string, password: string): Promise<L
     };
     
     localStorage.setItem('professor_session', JSON.stringify(sessionData));
-    localStorage.setItem('userRole', 'professor');
+    //localStorage.setItem('userRole', 'professor');
     localStorage.setItem('userEmail', user.phone + '@professor.temp');
     localStorage.setItem('userName', user.name);
     

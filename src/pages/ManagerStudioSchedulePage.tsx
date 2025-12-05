@@ -1,3 +1,4 @@
+//src/pages/ManagerStudioSchedulePage.tsx
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import { supabase } from "../utils/supabaseClient";
@@ -2298,74 +2299,85 @@ const handleApprovalRequest = async (reason: string) => {
   try {
     const statusMap = {
       edit: 'modification_requested',
-      cancel: 'cancellation_requested'
+      cancel: 'cancellation_requested',
     };
 
-    // 그룹 스케줄 처리 (기존 로직)
     let scheduleIds = [approvalSchedule.id];
     
-    if (approvalSchedule.schedule_group_id) {
+    // 그룹 스케줄 ID 수집
+    if (approvalSchedule.schedulegroupid) {
       const { data: groupSchedules, error: groupError } = await supabase
         .from('schedules')
         .select('id')
-        .eq('schedule_group_id', approvalSchedule.schedule_group_id)
-        .eq('is_active', true);
-      
+        .eq('schedulegroupid', approvalSchedule.schedulegroupid)
+        .eq('isactive', true);
       if (!groupError && groupSchedules) {
         scheduleIds = groupSchedules.map(s => s.id);
       }
     }
 
+    // ✅ 수정: schedules 테이블에 사유, 담당자 명확히 기록
+    const updateData: any = {
+      approval_status: statusMap[approvalRequestType],
+      updated_at: new Date().toISOString(),
+      updated_by: managerInfo?.id,
+    };
+
+    if (approvalRequestType === 'edit') {
+      updateData.modification_reason = reason; // 수정사유 기록
+    } else if (approvalRequestType === 'cancel') {
+      updateData.cancellation_reason = reason; // ✅ 취소사유 기록 (누락 방지!)
+      updateData.cancelled_by = managerInfo?.id; // ✅ 취소자 기록
+    }
+
     const { error } = await supabase
       .from('schedules')
-      .update({ 
-        approval_status: statusMap[approvalRequestType],
-        updated_at: new Date().toISOString(),
-        modification_reason: `${approvalRequestType === 'edit' ? '수정' : '취소'} 요청: ${reason} [요청자: ${managerInfo?.name || '매니저'}]`
-      })
+      .update(updateData)
       .in('id', scheduleIds);
 
     if (error) throw error;
 
-    // 메시지 생성 및 전송
-    const message = generateAdminMessage(
-      approvalRequestType,           // 정의된 변수 사용
-      approvalSchedule,              // 정의된 변수 사용
-      managerInfo?.name || '매니저', // 정의된 변수 사용
-      reason                         // 파라미터 사용
-    );
-    
-    console.log('🔧 승인요청 메시지:', message);
-
-    if (!message) {
-      console.error('❌ 메시지 생성 실패');
-      alert('메시지 생성 실패');
-      return;
-    }
-
-    // 메시지 전송
-    try {
-      await fetch('/api/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'approval_request',
-          message: message
-        })
+    // ✅ schedule_history에도 반드시 기록
+    for (const scheduleId of scheduleIds) {
+      await supabase.from('schedule_history').insert({
+        schedule_id: scheduleId,
+        change_type: approvalRequestType === 'edit' ? 'modification_requested' : 'cancellation_requested',
+        changed_by: managerInfo?.id,
+        old_value: JSON.stringify({ approval_status: approvalSchedule.approval_status }),
+        new_value: JSON.stringify({ approval_status: statusMap[approvalRequestType] }),
+        description: reason, // ✅ 사유 명확히!
+        change_details: {
+          reason: reason,
+          role: 'manager',
+          name: managerInfo?.name,
+          type: approvalRequestType
+        },
+        created_at: new Date().toISOString(),
+        changed_at: new Date().toISOString()
       });
-      console.log('✅ 승인요청 메시지 발송 성공');
-    } catch (messageError) {
-      console.log('❌ 승인요청 메시지 발송 실패:', messageError);
     }
 
-    alert(`${approvalRequestType === 'edit' ? '수정' : '취소'} 요청이 완료되었습니다.`);
+    // 메시지 생성 및 전송...
+    const message = generateAdminMessage(approvalRequestType, approvalSchedule, managerInfo?.name, reason);
     
-    // 화면 새로고침
+    if (message) {
+      try {
+        await fetch('/api/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'approvalrequest', message: message })
+        });
+      } catch (messageError) {
+        console.log('메시지 전송 실패:', messageError);
+      }
+    }
+
+    alert(approvalRequestType === 'edit' ? '수정 요청이 완료되었습니다.' : '취소 요청이 완료되었습니다.');
     fetchAllSchedules(false);
     
   } catch (error) {
-    console.error('승인 요청 실패:', error);
-    alert(`승인 요청 중 오류가 발생했습니다: ${error.message}`);
+    console.error('승인 요청 오류:', error);
+    alert(error.message);
   }
 
   setShowApprovalModal(false);
@@ -2457,165 +2469,258 @@ const handleApprovalRequest = async (reason: string) => {
     }
   };
 
+  const createScheduleGroup = async (data: StudioScheduleFormData) => {
+  try {
+    const studioId = await findAvailableStudio(
+      data.shooting_type,
+      data.shoot_date,
+      data.start_time,
+      data.end_time
+    );
+
+    if (!studioId) {
+      throw new Error('사용 가능한 스튜디오를 찾을 수 없습니다.');
+    }
+
+    // 분할 스케줄
+    if (data.break_time_enabled) {
+      const groupId = `${data.professor_name}_${data.shoot_date}_${Date.now()}`;
+
+      const schedule1 = {
+        schedule_type: 'studio',
+        shoot_date: data.shoot_date,
+        start_time: data.start_time,
+        end_time: data.break_start_time,
+        professor_name: data.professor_name,
+        course_name: data.course_name || null,
+        course_code: data.course_code || null,
+        shooting_type: data.shooting_type,
+        notes: data.notes || null,
+        sub_location_id: studioId,
+        team_id: 1,
+        approval_status: 'pending',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        sequence_order: 1,
+        is_split_schedule: true,
+        break_time_enabled: true,
+        break_start_time: data.break_start_time,
+        break_end_time: data.break_end_time,
+        break_duration_minutes: data.break_duration_minutes,
+        schedule_group_id: groupId,
+        professor_category_id: selectedProfessorInfo?.category_id || null
+      };
+
+      const schedule2 = {
+        ...schedule1,
+        start_time: data.break_end_time,
+        end_time: data.end_time,
+        sequence_order: 2
+      };
+
+      const { data: createdSchedules, error } = await supabase
+        .from('schedules')
+        .insert([schedule1, schedule2])
+        .select();
+
+      if (error) throw error;
+
+      // 히스토리 기록
+      if (createdSchedules && createdSchedules.length > 0) {
+        for (const sched of createdSchedules) {
+          await supabase.from('schedule_history').insert({
+            schedule_id: sched.id,
+            change_type: 'created',
+            changed_by: managerInfo?.id,
+            old_value: null,
+            new_value: JSON.stringify(sched),
+            description: '최초 스케줄 등록',
+            change_details: {
+              role: 'manager',
+              name: managerInfo?.name,
+              professor_category_id: sched.professor_category_id
+            },
+            created_at: new Date().toISOString(),
+            changed_at: new Date().toISOString()
+          });
+        }
+      }
+
+      return {
+        success: true,
+        data: createdSchedules,
+        message: `분할 스케줄이 등록되었습니다.\n1차: ${data.start_time} ~ ${data.break_start_time}\n휴식: ${data.break_start_time} ~ ${data.break_end_time}\n2차: ${data.break_end_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
+      };
+    } else {
+      // 단일 스케줄
+      const schedule = {
+        schedule_type: 'studio',
+        shoot_date: data.shoot_date,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        professor_name: data.professor_name,
+        course_name: data.course_name || null,
+        course_code: data.course_code || null,
+        shooting_type: data.shooting_type,
+        notes: data.notes || null,
+        sub_location_id: studioId,
+        team_id: 1,
+        approval_status: 'pending',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        sequence_order: 1,
+        is_split_schedule: false,
+        break_time_enabled: false,
+        break_start_time: null,
+        break_end_time: null,
+        break_duration_minutes: 0,
+        professor_category_id: selectedProfessorInfo?.category_id || null
+      };
+
+      const { data: createdSchedule, error } = await supabase
+        .from('schedules')
+        .insert([schedule])
+        .select();
+
+      if (error) throw error;
+
+      // 히스토리 기록
+      if (createdSchedule && createdSchedule.length > 0) {
+        const newSchedule = createdSchedule[0];
+        await supabase.from('schedule_history').insert({
+          schedule_id: newSchedule.id,
+          change_type: 'created',
+          changed_by: managerInfo?.id,
+          old_value: null,
+          new_value: JSON.stringify(newSchedule),
+          description: '최초 스케줄 등록',
+          change_details: {
+            role: 'manager',
+            name: managerInfo?.name,
+            professor_category_id: newSchedule.professor_category_id
+          },
+          created_at: new Date().toISOString(),
+          changed_at: new Date().toISOString()
+        });
+      }
+
+      return {
+        success: true,
+        data: createdSchedule,
+        message: `스케줄이 등록되었습니다.\n${data.start_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
+      };
+    }
+  } catch (error) {
+    console.error('스케줄 생성 오류:', error);
+    throw new Error(`스케줄 생성 실패: ${error.message}`);
+  }
+};
+
   // 실제 수정 저장 함수 - 양방향 변환 처리
 const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
   try {
-    const studioId = editingSchedule?.sub_location_id;
-
-    // ✅ updatedData 대신 editedSchedule 또는 실제 데이터 사용
+    const studioId = editingSchedule?.sublocationid;
+    
     const finalData = {
-      shoot_date: editedSchedule.shoot_date,        // updatedData → editedSchedule
-      start_time: editedSchedule.start_time,         // updatedData → editedSchedule
-      end_time: editedSchedule.end_time,             // updatedData → editedSchedule
-      professor_name: editedSchedule.professor_name, // updatedData → editedSchedule
-      course_name: editedSchedule.course_name || null,
-      course_code: editedSchedule.course_code || null,
-      shooting_type: editedSchedule.shooting_type,
+      shoot_date: editedSchedule.shootdate,
+      start_time: editedSchedule.starttime,
+      end_time: editedSchedule.endtime,
+      professor_name: editedSchedule.professorname,
+      course_name: editedSchedule.coursename || null,
+      course_code: editedSchedule.coursecode || null,
+      shooting_type: editedSchedule.shootingtype,
       notes: editedSchedule.notes || null,
       sub_location_id: studioId,
-      break_time_enabled: editedSchedule.break_time_enabled || false,
-      break_start_time: editedSchedule.break_time_enabled && editedSchedule.break_start_time 
-        ? editedSchedule.break_start_time : null,
-      break_end_time: editedSchedule.break_time_enabled && editedSchedule.break_end_time 
-        ? editedSchedule.break_end_time : null,
-      break_duration_minutes: editedSchedule.break_time_enabled 
-        ? (editedSchedule.break_duration_minutes || 0) : 0,
-      
-      // 수정 후 다시 승인 대기 상태로!
+      break_time_enabled: editedSchedule.breaktimeenabled || false,
+      break_start_time: editedSchedule.breaktimeenabled && editedSchedule.breakstarttime ? editedSchedule.breakstarttime : null,
+      break_end_time: editedSchedule.breaktimeenabled && editedSchedule.breakendtime ? editedSchedule.breakendtime : null,
+      break_duration_minutes: editedSchedule.breaktimeenabled ? editedSchedule.breakdurationminutes || 0 : 0,
       approval_status: 'pending',
       updated_at: new Date().toISOString(),
-      modification_reason: `매니저 수정: ${new Date().toLocaleString('ko-KR')} [수정자: ${managerInfo?.name || '매니저'}]`
+      updated_by: managerInfo?.id, // ✅ 추가
+      modification_reason: reason // ✅ 사유 명확히
     };
 
-    // ... 기존 로직 (양방향 변환 처리)
-    if (editingSchedule?.is_grouped && editingSchedule?.grouped_schedules) {
-      const scheduleIds = editingSchedule.grouped_schedules.map(s => s.id);
-      const firstScheduleId = scheduleIds[0];
+    // 그룹 스케줄 여부에 따라 update 처리...
+    
+    if (editingSchedule?.isgrouped && editingSchedule?.groupedschedules) {
+      const scheduleIds = editingSchedule.groupedschedules.map((s: any) => s.id);
       
-      if (!editedSchedule.break_time_enabled) { // updatedData → editedSchedule
-        // 분할 → 단일 변환
-        const { error: updateError } = await supabase
-          .from('schedules')
-          .update({
-            ...finalData,
-            sequence_order: 1,
-            schedule_group_id: null,
-            is_split_schedule: false
-          })
-          .eq('id', firstScheduleId);
-          
-        if (updateError) throw updateError;
-
-        const otherScheduleIds = scheduleIds.slice(1);
-        if (otherScheduleIds.length > 0) {
-          const { error: hideError } = await supabase
-            .from('schedules')
-            .update({
-              is_active: false,
-              updated_at: new Date().toISOString(),
-              modification_reason: '휴식시간 삭제로 인한 스케줄 통합'
-            })
-            .in('id', otherScheduleIds);
-            
-          if (hideError) throw hideError;
-        }
-      } else {
-        // 기존 분할 스케줄 유지 - 휴식시간 수정
-        const { error } = await supabase
-          .from('schedules')
-          .update(finalData)
-          .in('id', scheduleIds);
-          
-        if (error) throw error;
+      const { error: updateError } = await supabase
+        .from('schedules')
+        .update(finalData)
+        .in('id', scheduleIds);
+      
+      if (updateError) throw updateError;
+      
+      // ✅ history 기록
+      for (const scheduleId of scheduleIds) {
+        await supabase.from('schedule_history').insert({
+          schedule_id: scheduleId,
+          change_type: 'modification_approved',
+          changed_by: managerInfo?.id,
+          old_value: JSON.stringify(editingSchedule),
+          new_value: JSON.stringify(finalData),
+          description: reason,
+          change_details: {
+            reason: reason,
+            role: 'manager',
+            name: managerInfo?.name
+          },
+          created_at: new Date().toISOString(),
+          changed_at: new Date().toISOString()
+        });
       }
     } else {
-      // 기존 단일 스케줄
-      if (editedSchedule.break_time_enabled) { // updatedData → editedSchedule
-        // 단일 → 분할 변환
-        const groupId = `${editedSchedule.professor_name}_${editedSchedule.shoot_date}_${Date.now()}`;
-        
-        // 1. 기존 스케줄을 1차 스케줄로 업데이트
-        const schedule1Data = {
-          ...finalData,
-          start_time: editedSchedule.start_time,           // updatedData → editedSchedule
-          end_time: editedSchedule.break_start_time,       // updatedData → editedSchedule
-          schedule_group_id: groupId,
-          sequence_order: 1,
-          is_split_schedule: true
-        };
-        
-        const { error: update1Error } = await supabase
-          .from('schedules')
-          .update(schedule1Data)
-          .eq('id', editingSchedule.id);
-          
-        if (update1Error) throw update1Error;
-
-        // 2. 2차 스케줄 새로 생성
-        const schedule2Data = {
-          ...finalData,
-          start_time: editedSchedule.break_end_time,       // updatedData → editedSchedule
-          end_time: editedSchedule.end_time,               // updatedData → editedSchedule
-          schedule_group_id: groupId,
-          sequence_order: 2,
-          is_split_schedule: true,
-          schedule_type: 'studio',
-          team_id: 1,
-          created_at: new Date().toISOString(),
-          is_active: true
-        };
-        
-        const { error: insert2Error } = await supabase
-          .from('schedules')
-          .insert([schedule2Data]);
-          
-        if (insert2Error) throw insert2Error;
-        
-      } else {
-        // 단일 스케줄 유지 - 일반 수정
-        const { error } = await supabase
-          .from('schedules')
-          .update(finalData)
-          .eq('id', editingSchedule.id);
-          
-        if (error) throw error;
-      }
+      const { error } = await supabase
+        .from('schedules')
+        .update(finalData)
+        .eq('id', editingSchedule.id);
+      
+      if (error) throw error;
+      
+      // ✅ history 기록
+      await supabase.from('schedule_history').insert({
+        schedule_id: editingSchedule.id,
+        change_type: 'modification_approved',
+        changed_by: managerInfo?.id,
+        old_value: JSON.stringify(editingSchedule),
+        new_value: JSON.stringify(finalData),
+        description: reason,
+        change_details: {
+          reason: reason,
+          role: 'manager',
+          name: managerInfo?.name
+        },
+        created_at: new Date().toISOString(),
+        changed_at: new Date().toISOString()
+      });
     }
 
-    // 🔧 재승인 메시지 발송
-    const message = generateAdminMessage(
-      'reapproval',                    // 재승인 타입
-      editedSchedule,                  // 수정된 스케줄 데이터 (updatedData → editedSchedule)
-      managerInfo?.name || '매니저',   // 매니저 이름
-      reason || '스케줄 수정으로 인한 재승인 필요'  // 사유
-    );
-
-    console.log('🔧 재승인 메시지:', message);
-
+    // 메시지 생성 및 전송...
+    const message = await generateAdminMessage('reapproval', editedSchedule, managerInfo?.name, reason);
     if (message) {
       try {
         await fetch('/api/message', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'approval_request',
-            message: message
-          })
+          body: JSON.stringify({ type: 'approvalrequest', message: message })
         });
-        console.log('✅ 재승인 메시지 발송 성공');
       } catch (messageError) {
-        console.log('❌ 재승인 메시지 발송 실패:', messageError);
+        console.log('메시지 전송 실패:', messageError);
       }
     }
 
-    alert('스케줄이 수정되었습니다.\n관리자 재승인 후 최종 확정됩니다.');
+    alert('수정이 완료되었습니다.');
     setShowEditModal(false);
     setEditingSchedule(null);
     fetchAllSchedules(false);
     
   } catch (error) {
-    console.error('스케줄 수정 오류:', error);
-    alert('스케줄 수정 중 오류가 발생했습니다: ' + error.message);
+    console.error('수정 저장 오류:', error);
+    alert(error.message);
   }
 };
 
@@ -2749,112 +2854,7 @@ const checkScheduleConflictAndRecommend = async (
     };
   }
 };
-// 스케줄 생성 함수 (분할 처리 포함)
-  const createScheduleGroup = async (data: StudioScheduleFormData) => {
-    try {
-      const studioId = await findAvailableStudio(
-        data.shooting_type,
-        data.shoot_date,
-        data.start_time,
-        data.end_time
-      );
-
-      if (!studioId) {
-        throw new Error('사용 가능한 스튜디오를 찾을 수 없습니다.');
-      }
-
-      if (data.break_time_enabled && data.break_start_time && data.break_end_time) {
-        // 분할 스케줄 생성
-        const groupId = `${data.professor_name}_${data.shoot_date}_${Date.now()}`;
-
-        const schedule1 = {
-          schedule_type: 'studio',
-          shoot_date: data.shoot_date,
-          start_time: data.start_time,
-          end_time: data.break_start_time,
-          professor_name: data.professor_name,
-          course_name: data.course_name || null,
-          course_code: data.course_code || null,
-          shooting_type: data.shooting_type,
-          notes: `${data.notes || ''}`.trim() || null,
-          sub_location_id: studioId,
-          team_id: 1,
-          approval_status: 'pending',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          schedule_group_id: groupId,
-          sequence_order: 1,
-          is_split_schedule: true,
-          break_time_enabled: true,
-          break_start_time: data.break_start_time,
-          break_end_time: data.break_end_time,
-          break_duration_minutes: data.break_duration_minutes || 0
-        };
-
-        const schedule2 = {
-          ...schedule1,
-          start_time: data.break_end_time,
-          end_time: data.end_time,
-          sequence_order: 2
-        };
-
-        const { data: createdSchedules, error } = await supabase
-          .from('schedules')
-          .insert([schedule1, schedule2])
-          .select();
-
-        if (error) throw error;
-
-        return {
-          success: true,
-          data: createdSchedules,
-          message: `분할 스케줄이 등록되었습니다.\n1차: ${data.start_time} ~ ${data.break_start_time}\n휴식: ${data.break_start_time} ~ ${data.break_end_time}\n2차: ${data.break_end_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
-        };
-      } else {
-        // 단일 스케줄 생성
-        const schedule = {
-          schedule_type: 'studio',
-          shoot_date: data.shoot_date,
-          start_time: data.start_time,
-          end_time: data.end_time,
-          professor_name: data.professor_name,
-          course_name: data.course_name || null,
-          course_code: data.course_code || null,
-          shooting_type: data.shooting_type,
-          notes: data.notes || null,
-          sub_location_id: studioId,
-          team_id: 1,
-          approval_status: 'pending',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          sequence_order: 1,
-          is_split_schedule: false,
-          break_time_enabled: false,
-          break_start_time: null,
-          break_end_time: null,
-          break_duration_minutes: 0
-        };
-
-        const { data: createdSchedule, error } = await supabase
-          .from('schedules')
-          .insert([schedule])
-          .select();
-
-        if (error) throw error;
-
-        return {
-          success: true,
-          data: createdSchedule,
-          message: `스케줄이 등록되었습니다.\n${data.start_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
-        };
-      }
-    } catch (error) {
-      console.error('스케줄 생성 오류:', error);
-      throw new Error(`스케줄 생성 실패: ${error.message}`);
-    }
-  };
+  
 
   // 폼 검증
   const validateForm = (): boolean => {
@@ -3141,65 +3141,65 @@ const checkScheduleConflictAndRecommend = async (
     );
   };
 
-  // 스케줄 등록 제출
-  const submitShootingRequest = async () => {
-    if (!validateForm()) {
-      alert('필수 항목을 모두 입력해주세요');
+const submitShootingRequest = async () => {
+  if (!validateForm()) {
+    alert('필수 항목을 모두 입력해주세요');
+    return;
+  }
+
+  try {
+    const conflictCheck = await checkScheduleConflictAndRecommend(formData);
+    
+    if (conflictCheck.hasConflict) {
+      alert(conflictCheck.conflictMessage);
       return;
     }
 
-    try {
-      const conflictCheck = await checkScheduleConflictAndRecommend(formData);
-      
-      if (conflictCheck.hasConflict) {
-        alert(conflictCheck.conflictMessage);
-        return;
-      }
+    const confirmSubmit = confirm(
+      `${formData.professor_name} 교수님 촬영을 요청하시겠습니까?\n\n` +
+      `날짜: ${formData.shoot_date}\n` +
+      `시간: ${formData.start_time} ~ ${formData.end_time}\n` +
+      `촬영형식: ${formData.shooting_type}`
+    );
 
-      const confirmSubmit = confirm(
-        `${formData.professor_name} 교수님 촬영을 요청하시겠습니까?\n\n` +
-        `날짜: ${formData.shoot_date}\n` +
-        `시간: ${formData.start_time} ~ ${formData.end_time}\n` +
-        `촬영형식: ${formData.shooting_type}`
+    if (!confirmSubmit) return;
+
+    // ✅ 스케줄 생성
+    const result = await createScheduleGroup(formData);
+
+    // ✅ 관리자에게 승인 요청 메시지 발송
+    try {
+      const adminMessage = await generateAdminMessage(
+        'approval',
+        formData,
+        managerInfo?.name || '매니저'
       );
 
-      if (!confirmSubmit) return;
-
-      const result = await createScheduleGroup(formData);
-
-      // 관리자에게 승인 요청 메시지 발송
-      // 🔧 메시지 발송 - await 추가!
-      const message = await generateAdminMessage('approval', formData, managerInfo?.name || '매니저');
-
-      try {
-        await fetch('/api/message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'approval_request',
-            message: generateAdminMessage(
-              requestType,     // 'edit', 'approval' 등 실제 값
-              schedule,        // 실제 스케줄 객체
-              managerName,     // 실제 매니저 이름
-              reason          // 실제 사유 (선택적)
-            )
-          })
-        });
-      } catch (err) {
-        console.log('메시지 발송 실패:', err);
-      }
-
-      alert(result.message);
-      resetForm();
-      if (showScheduleList) {
-        fetchAllSchedules(false);
-      }
-
-    } catch (error) {
-      console.error('등록 오류:', error);
-      alert('등록 중 오류가 발생했습니다: ' + error.message);
+      await fetch('/api/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'approval_request',
+          message: adminMessage
+        })
+      });
+    } catch (err) {
+      console.log('메시지 발송 실패:', err);
+      // 메시지 발송 실패해도 스케줄 등록은 성공으로 처리
     }
-  };
+
+    alert(result.message);
+    resetForm();
+    
+    if (showScheduleList) {
+      fetchAllSchedules(false);
+    }
+
+  } catch (error) {
+    console.error('등록 오류:', error);
+    alert('등록 중 오류가 발생했습니다: ' + error.message);
+  }
+};
 
   // 폼 초기화
   const resetForm = () => {
@@ -3304,7 +3304,7 @@ const checkScheduleConflictAndRecommend = async (
           
           <button
             onClick={() => {
-              localStorage.setItem('userRole', 'academy_manager');
+              //localStorage.setItem('userRole', 'academy_manager');
               localStorage.setItem('userName', '테스트매니저');
               localStorage.setItem('userEmail', 'manager@test.com');
               window.location.reload();
