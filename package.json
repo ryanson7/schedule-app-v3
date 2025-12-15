@@ -18,7 +18,6 @@
     "lint:fix": "next lint --fix",
     "analyze": "cross-env ANALYZE=true next build",
     "test": "echo \"No tests specified\" && exit 0",
-    
     "pages:build": "npx @cloudflare/next-on-pages",
     "preview": "npm run pages:build && wrangler pages dev",
     "deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static"
@@ -35,7 +34,7 @@
     "formidable": "^3.5.4",
     "html5-qrcode": "^2.3.8",
     "kakaowork-api": "^1.1.9",
-    "next": "^15.5.2",
+    "next": "15.5.9",
     "next-auth": "^4.24.11",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",
