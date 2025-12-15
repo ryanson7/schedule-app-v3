@@ -77,16 +77,22 @@ export default function ProfileSettings() {
 
     setSaving(true);
 
+    // 🎯 방법 1: 현재 비밀번호로 재인증 후 변경
     try {
-      // 🎯 방법 1: 현재 비밀번호로 재인증 후 변경
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const result = await supabase.auth.signInWithPassword({
         email: profile.email,
-        password: passwords.current
+        password: passwords.current,
       });
 
-      if (signInError) {
+      if (result.error) {
         throw new Error('현재 비밀번호가 올바르지 않습니다.');
       }
+    } catch (err: any) {
+      console.error('❌ 비밀번호 재인증 실패/예외:', err);
+      alert(err?.message || '현재 비밀번호가 올바르지 않습니다.');
+      setSaving(false);
+      return; // 여기서 handlePasswordChange 종료
+    }
 
       // 🎯 새 비밀번호로 업데이트
       const { error: updateError } = await supabase.auth.updateUser({

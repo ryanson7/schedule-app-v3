@@ -147,16 +147,29 @@ export default function LoginPage() {
       console.log('✅ 사용자 정보 확인:', userData);
 
       // 🔧 Supabase Auth 로그인
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      let authData = null;
 
-      if (authError) {
-        console.error('❌ Supabase 인증 실패:', authError);
+      try {
+        // signInWithPassword 가 에러를 던진다고 가정하고,
+        // error 는 아예 구조분해하지 않는다.
+        const result = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        authData = result.data;
+
+        // 혹시 result.error 가 올 수도 있으니 한 번 더 체크
+        if (result.error) {
+          throw result.error;
+        }
+      } catch (err: any) {
+        console.error('❌ Supabase 인증 실패/예외:', err);
         setLoginAttempts(prev => prev + 1);
 
-        if (authError.message.includes('Invalid login credentials')) {
+        const msg = err?.message || '';
+
+        if (msg.includes('Invalid login credentials')) {
           if (userData.role === 'shooter') {
             setError('비밀번호가 올바르지 않습니다. 초기 비밀번호는 "eduwill1234!"입니다.');
           } else if (userData.role === 'professor') {
@@ -164,19 +177,21 @@ export default function LoginPage() {
           } else {
             setError('이메일 또는 비밀번호가 올바르지 않습니다.');
           }
-        } else if (authError.message.includes('Email not confirmed')) {
+        } else if (msg.includes('Email not confirmed')) {
           setError('이메일 인증이 필요합니다. 관리자에게 문의하세요.');
         } else {
-          setError(`로그인 실패: ${authError.message}`);
+          setError('로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         }
-        return;
+
+        return; // ❗ 여기서 handleLogin 종료
       }
 
-      if (!authData.user) {
+      if (!authData || !authData.user) {
         console.error('❌ Auth 사용자 데이터 없음');
         setError('인증 정보를 가져올 수 없습니다.');
         return;
       }
+
 
       console.log('✅ Supabase 인증 성공:', authData.user.email);
 

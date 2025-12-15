@@ -830,13 +830,13 @@ export default function StudioScheduleModal({
 
   const isEditMode = !!(initialData?.scheduleData && initialData.scheduleData.id);
 
-  // ✅ 3. getInitialFormData 함수 수정
+// ✅ 3. getInitialFormData 함수 수정
 const getInitialFormData = () => {
   const scheduleData = initialData?.scheduleData;
-  
+
   console.log('🔍 [getInitialFormData] scheduleData:', scheduleData);
   console.log('🔍 [getInitialFormData] isEditMode:', isEditMode);
-  
+
   // ✅ 수정 모드일 때
   if (isEditMode && scheduleData) {
     const formData = {
@@ -850,31 +850,32 @@ const getInitialFormData = () => {
       notes: scheduleData.notes || '',
       sub_location_id: scheduleData.sub_location_id || initialData?.locationId || ''
     };
-    
+
     console.log('✅ [getInitialFormData] 수정 모드 formData:', formData);
-    
     return formData;
   } else {
     // ✅ 신규 등록 모드
     const regRange = SchedulePolicy.getRegistrationDateRange();
-    
+
     const formData = {
-      shoot_date: initialData?.date || regRange.startDate || '',
+      shoot_date:
+        scheduleData?.shoot_date || initialData?.date || regRange.startDate || '',
       start_time: '',
       end_time: '',
       professor_name: '',
       course_name: '',
       course_code: '',
-      shooting_type: '',
+      // 🔥 클릭한 셀에서 넘어온 기본값을 그대로 사용
+      shooting_type: scheduleData?.shooting_type || '',
       notes: '',
-      sub_location_id: initialData?.locationId || ''
+      sub_location_id: scheduleData?.sub_location_id || initialData?.locationId || ''
     };
-    
+
     console.log('✅ [getInitialFormData] 신규 모드 formData:', formData);
-    
     return formData;
   }
 };
+
 
 useEffect(() => {
     if (open && initialData) {
@@ -1876,13 +1877,8 @@ const handleSave = async (
   }
 };
 
-  // handleSave 함수 다음에 추가
+// 삭제 핸들러
 const handleDelete = async () => {
-  if (!initialData?.scheduleData?.id) {
-    alert('❌ 오류\n\n삭제할 스케줄 ID가 없습니다.');
-    return;
-  }
-
   const confirmed = window.confirm(
     '⚠️ 스케줄 삭제\n\n' +
     '정말로 이 스케줄을 삭제하시겠습니까?\n' +
@@ -1894,9 +1890,13 @@ const handleDelete = async () => {
   try {
     setSaving(true);
 
-    if (onDelete) {
-      await onDelete(initialData.scheduleData.id);
-      alert('✅ 삭제 완료\n\n스케줄이 성공적으로 삭제되었습니다.');
+    if (onDelete && initialData?.scheduleData?.id) {
+      const result = await onDelete(initialData.scheduleData.id);
+      if (result?.success) {
+        alert('✅ 삭제 완료\n\n스케줄이 성공적으로 삭제되었습니다.');
+      } else {
+        alert('❌ 오류\n\n' + (result?.message || '스케줄 삭제 실패'));
+      }
       onClose();
     } else {
       alert('❌ 오류\n\n삭제 기능을 사용할 수 없습니다.');
@@ -2971,24 +2971,30 @@ const handleDelete = async () => {
                   </button>
                 )}
 
-                {isAdmin && isEditMode && (
-                  <button
-                    onClick={handleDelete}
-                    disabled={saving}
-                    style={{
-                      padding: UNIFIED_STYLES.padding,
-                      border: 'none',
-                      borderRadius: UNIFIED_STYLES.borderRadius,
-                      backgroundColor: saving ? '#d1d5db' : '#dc2626',
-                      color: 'white',
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    삭제
-                  </button>
-                )}
+              {/* 스케줄 삭제 버튼 */}
+                  {isAdmin && isEditMode && (
+                    <button
+                      onClick={async () => {
+                        // 버튼 클릭 시 위에 정의된 handleDelete 함수 호출
+                        await handleDelete();
+                      }}
+                      disabled={saving}
+                      style={{
+                        padding: '10px 20px',
+                        border: '1px solid #d97706',
+                        borderRadius: '6px',
+                        backgroundColor: 'white',
+                        color: '#d97706',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        marginLeft: '10px',
+                        opacity: saving ? 0.5 : 1
+                      }}
+                    >
+                      스케줄 삭제
+                    </button>
+                  )}
 
                 {isAdmin ? (
                   <>

@@ -1,12 +1,15 @@
-// components/DynamicNavigation.tsx - 모바일 반응형 + 역할별 홈 링크
+// components/DynamicNavigation.tsx - 모바일 반응형 + 역할별 홈 링크 (useAuth 사용 버전)
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../utils/supabaseClient';
 import { MENU_CONFIG } from '../utils/menuConfig';
 import { getRolePermissions, getFilteredMenus } from '../utils/permissions';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function DynamicNavigation() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -17,10 +20,11 @@ export default function DynamicNavigation() {
     isLoading: true,
   });
   const [filteredMenus, setFilteredMenus] = useState<any[]>([]);
-  const [storedUserRole, setStoredUserRole] = useState<string>('staff');
 
-  // 🔧 모바일 감지
+  // ✅ 모바일 감지
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
@@ -31,36 +35,8 @@ export default function DynamicNavigation() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 🔧 userRole를 상태로 관리 (localStorage 변화 반영)
+  // ✅ 전역 스타일 + 전역 클릭 핸들러 (1회 설정)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const readRole = () => {
-      const role = localStorage.getItem('userRole') || 'staff';
-      setStoredUserRole(role);
-    };
-
-    readRole();
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'userRole') {
-        readRole();
-      }
-    };
-    window.addEventListener('storage', onStorage);
-
-    return () => {
-      window.removeEventListener('storage', onStorage);
-    };
-  }, []);
-
-  // 🔧 초기 마운트 + userRole 변경 시마다 메뉴 로드
-  useEffect(() => {
-    if (!storedUserRole) return;
-
-    setMounted(true);
-    loadUserMenus(storedUserRole);
-
     if (typeof document !== 'undefined') {
       const style = document.createElement('style');
       style.id = 'nav-global-style';
@@ -89,11 +65,29 @@ export default function DynamicNavigation() {
     return () => {
       document.removeEventListener('click', handleGlobalClick);
     };
-  }, [storedUserRole]);
+  }, []);
 
-  // 🔧 역할별 홈 링크 결정
+  // ✅ Auth + localStorage 에서 최종 역할 계산
+  const resolvedUserRole: string | undefined = (() => {
+    if (typeof window === 'undefined') return undefined;
+
+    // AuthContext.saveUserInfo 가 넣어준 최종 역할 (schedule_admin, academy_manager 등)
+    const fromStorage = localStorage.getItem('userRole');
+    if (fromStorage) return fromStorage;
+
+    // 그래도 없으면 Supabase user_metadata 참고 (fallback)
+    const metaRole =
+      (user?.user_metadata as any)?.role ||
+      (user?.app_metadata as any)?.role;
+
+    if (metaRole) return metaRole as string;
+
+    return undefined; // 아직 역할 미확정
+  })();
+
+  // ✅ 역할별 홈 링크 결정
   const getHomeLink = () => {
-    const userRole = storedUserRole;
+    const role = resolvedUserRole || 'staff';
 
     const roleHomePaths: Record<string, string> = {
       shooter: '/shooter/ShooterDashboard',
@@ -107,11 +101,11 @@ export default function DynamicNavigation() {
       manager: '/admin',
     };
 
-    return roleHomePaths[userRole] || '/admin';
+    return roleHomePaths[role] || '/admin';
   };
 
-  // 사용자 메뉴 로드
-  const loadUserMenus = async (roleFromStorage: string) => {
+  // ✅ 사용자 메뉴 + 표시 정보 로드 (Auth 역할 확정된 뒤에만 실행)
+  const loadUserMenus = async (roleCode: string) => {
     try {
       console.log('🔍 사용자 메뉴 로딩 시작...');
 
@@ -127,8 +121,8 @@ export default function DynamicNavigation() {
         manager: '매니저',
       };
 
-      const role = roleFromStorage || 'staff';
-      console.log('👤 사용자 역할:', role);
+      const role = roleCode || 'staff';
+      console.log('👤 사용자 역할 코드(userRole):', role);
 
       const userPermissions = await getRolePermissions(role);
       console.log('🔑 사용자 권한:', userPermissions);
@@ -141,14 +135,14 @@ export default function DynamicNavigation() {
 
       try {
         const {
-          data: { user },
+          data: { user: supaUser },
         } = await supabase.auth.getUser();
 
-        if (user?.email) {
+        if (supaUser?.email) {
           const { data: userData, error: userError } = await supabase
             .from('users')
             .select('name')
-            .eq('email', user.email)
+            .eq('email', supaUser.email)
             .eq('is_active', true)
             .single();
 
@@ -157,9 +151,9 @@ export default function DynamicNavigation() {
             console.log('✅ DB에서 한글 이름 조회:', userData.name);
           } else {
             userName =
-              (user.user_metadata as any)?.name ||
-              (user.user_metadata as any)?.full_name ||
-              user.email?.split('@')[0] ||
+              (supaUser.user_metadata as any)?.name ||
+              (supaUser.user_metadata as any)?.full_name ||
+              supaUser.email?.split('@')[0] ||
               '사용자';
             console.log('⚠️ DB 조회 실패, 기본값 사용:', userName);
           }
@@ -169,13 +163,20 @@ export default function DynamicNavigation() {
         userName = '사용자';
       }
 
+      // 화면에 보여줄 한글 직책 텍스트
+      const displayRole = roleMap[role] || role;
+
       setUserInfo({
         name: userName,
-        role: roleMap[role] || role,
+        role: displayRole,
         isLoading: false,
       });
 
-      console.log('✅ 사용자 정보 설정 완료:', { name: userName, role });
+      console.log('✅ 사용자 정보 설정 완료:', {
+        name: userName,
+        userRole: role, // 권한 코드
+        displayRole, // 화면 표시용 텍스트
+      });
     } catch (error) {
       console.error('❌ 메뉴 로드 실패:', error);
       setUserInfo({
@@ -183,10 +184,18 @@ export default function DynamicNavigation() {
         role: '로드 실패',
         isLoading: false,
       });
-
       setFilteredMenus([]);
     }
   };
+
+  // ✅ Auth 로딩 끝 + 역할 확정된 뒤에만 메뉴 로드
+  useEffect(() => {
+    if (authLoading) return;
+    if (!resolvedUserRole) return; // 아직 역할 정보 없음 → 메뉴 로드 보류
+
+    setMounted(true);
+    loadUserMenus(resolvedUserRole);
+  }, [authLoading, resolvedUserRole]);
 
   if (!mounted) return null;
 
@@ -203,10 +212,15 @@ export default function DynamicNavigation() {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      localStorage.clear();
-      window.location.href = '/login';
     } catch (error) {
-      localStorage.clear();
+      // ignore
+    } finally {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch {
+        // ignore
+      }
       window.location.href = '/login';
     }
   };

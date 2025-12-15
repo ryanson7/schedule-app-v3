@@ -248,12 +248,22 @@ export default function MembersManagementPage() {
       await signOut();
       
       // 대상 사용자로 강제 로그인
-      const { error } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: 'qwer1234!' // 통일된 초기 비밀번호 사용
-      });
+      try {
+        const result = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: 'qwer1234!', // 통일된 초기 비밀번호 사용
+        });
 
-      if (error) throw error;
+        if (result.error) {
+          throw result.error;
+        }
+      } catch (err) {
+        console.error('❌ Supabase 자동 로그인 실패/예외:', err);
+        alert('자동 로그인에 실패했습니다. 수동으로 로그인해주세요.');
+        router.push('/login');
+        return; // ❗ 여기서 handleAutoLogin 종료
+      }
+
 
       alert(`${user.name}님으로 로그인되었습니다.`);
       

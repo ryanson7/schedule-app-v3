@@ -24,6 +24,10 @@ interface StudioAdminPanelProps {
 
 export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps) {
   const { user } = useAuth();
+  const userId =
+    (user as any)?.numericId ||
+    currentUser?.id ||
+    Number(typeof window !== 'undefined' ? localStorage.getItem('userNumericId') : 0);
   const [hasAccess, setHasAccess] = useState(false);
   const [accessLoading, setAccessLoading] = useState(true);
   
@@ -713,17 +717,15 @@ export default function StudioAdminPanel({ currentUser }: StudioAdminPanelProps)
     }
 
     // 🔥 히스토리 기록 (changed_by = numericId)
-    // ② history에도 description, change_details에 취소사유 남김
     await supabase
-      .from("schedule_history")
+      .from('schedule_history')
       .insert({
         schedule_id: scheduleId,
-        change_type: "cancelled",
-        changed_by: userId,
+        change_type: 'cancelled',
+        changed_by: userId,  // ✅ numericId
+        description: `관리자 취소 승인 (승인자: ${adminName})`,
         old_value: JSON.stringify({ approval_status: modalData.scheduleData.approval_status }),
-        new_value: JSON.stringify({ approval_status: "cancelled" }),
-        description: cancelReason, // ← 이 부분 추가(사유/메모)
-        change_details: { reason: cancelReason, admin: adminName }, // 상세 JSON도 활용 가능
+        new_value: JSON.stringify({ approval_status: 'cancelled' }),
         created_at: new Date().toISOString(),
         changed_at: new Date().toISOString()
       });
@@ -797,7 +799,7 @@ const updateSchedule = async (updateData: any, adminName: string) => {
 };
 
 // 🔥 스케줄 생성 함수
-const createSchedule = async (scheduleData: any, adminName: string) => {
+const createSchedule = async (scheduleData: any, adminName: string, userId: number) => {
   const newScheduleData = {
     ...scheduleData,
     schedule_type: 'studio',
@@ -810,9 +812,8 @@ const createSchedule = async (scheduleData: any, adminName: string) => {
     .from('schedules')
     .insert([newScheduleData])
     .select();
-    
+
   if (error) {
-    // ✅ alert로 표시
     if (error.message.includes('해당 시간대에 이미 예약된 스케줄이 있습니다')) {
       alert('⚠️ 시간 중복\n\n해당 시간대에 이미 예약된 스케줄이 있습니다.\n다른 시간을 선택해주세요.');
     } else {
@@ -838,6 +839,9 @@ const createSchedule = async (scheduleData: any, adminName: string) => {
     course_name: created.course_name || null,
   };
 
+  // ✅ 여기서 description 변수 선언
+  const description = `관리자 등록: ${adminName || '알 수 없음'}`;
+
   // 🔥 히스토리 기록 (관리자 등록)
   const { error: historyError } = await supabase
     .from('schedule_history')
@@ -847,7 +851,7 @@ const createSchedule = async (scheduleData: any, adminName: string) => {
       changed_by: userId,
       old_value: null,
       new_value: JSON.stringify(newValueObj),
-      description: '관리자 등록',
+      description,               // 이제 정상 작동
       change_details: newValueObj,
       changed_at: new Date().toISOString(),
     });
@@ -857,14 +861,14 @@ const createSchedule = async (scheduleData: any, adminName: string) => {
   } else {
     console.log('✅ 관리자 등록 History 저장 성공:', created.id);
   }
-      
+
   console.log('✅ 스튜디오 신규 등록 완료:', insertResult);
 };
 
 
 
 // 🔥 일반 스케줄 작업 처리 함수
-const handleScheduleOperation = async (data: any, action: string, adminName: string) => {
+const handleScheduleOperation = async (data: any, action: string, adminName: string,  userId: number) => {
   // ✅ 필수 필드 검증
   const requiredFields = {
     shoot_date: '촬영 날짜',
@@ -932,7 +936,7 @@ const handleScheduleOperation = async (data: any, action: string, adminName: str
     await fetchSchedules();
     return { success: true, message };
   } else {
-    await createSchedule(commonData, adminName);
+    await createSchedule(commonData, adminName, userId);  // ✅ userId 전달
     const message = action === 'approve' ? '등록 및 승인 완료되었습니다.' : '등록 완료되었습니다.';
     await fetchSchedules();
     return { success: true, message };
@@ -945,7 +949,7 @@ const handleStudioScheduleUpdate = async (
   adminName: string
 ) => {
   // ✅ userId 확보 및 검증
-  const userId = user?.numericId || Number(localStorage.getItem('userNumericId'));
+  //const userId = user?.numericId || Number(localStorage.getItem('userNumericId'));
   
   if (!userId) {
     alert('사용자 정보를 찾을 수 없습니다. 다시 로그인해주세요.');
@@ -1165,7 +1169,7 @@ if (oldEnd !== newEnd) {
     };
   } else {
     // ===== 신규 등록 모드 =====
-    return await handleScheduleOperation(data, action, adminName);
+    return await handleScheduleOperation(data, action, adminName, userId);
   }
 };
 
@@ -1180,25 +1184,37 @@ const handleSave = async (
 
     const adminName = getCurrentUserInfo();
 
+    let result;
+
     switch (action) {
       case 'cancel-approve':
-        return await handleCancelApproval(adminName);
+        result = await handleCancelApproval(adminName);
+        break;
       case 'approve':
       case 'request':
       case 'temp':
       default:
         // ✅ 새로운 통합 처리 로직
-        return await handleStudioScheduleUpdate(data, action, adminName);
+        result = await handleStudioScheduleUpdate(data, action, adminName);
+        break;
     }
+
+    // ✅ 정상 결과는 그대로 리턴
+    return result;
   } catch (error) {
     console.error('스튜디오 스케줄 저장 오류:', error);
-    alert(`저장 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
-    
+
+    // ✅ 여기서 한 번만 message 결정
     const message =
-      error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.';
+      (error as any)?.message ||
+      (error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.');
+
+    alert(`저장 오류: ${message}`);
+
     return { success: false, message };
   }
 };
+  
 
 
   const handleSplitSchedule = async (scheduleId: number, splitPoints: string[], reason: string) => {

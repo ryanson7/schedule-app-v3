@@ -79,15 +79,23 @@ export default function FirstLoginPage() {
     setSaving(true);
 
     try {
-      // 1. 현재 비밀번호로 재인증
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+    // 1. 현재 비밀번호로 재인증
+    try {
+      const result = await supabase.auth.signInWithPassword({
         email: userInfo.email,
-        password: passwords.current
+        password: passwords.current,
       });
 
-      if (signInError) {
+      if (result.error) {
         throw new Error('현재 비밀번호가 올바르지 않습니다.');
       }
+    } catch (err: any) {
+      console.error('❌ 재인증 실패/예외:', err);
+      alert(err?.message || '현재 비밀번호가 올바르지 않습니다.');
+      setSaving(false);
+      return; // 여기서 handlePasswordChange 종료
+    }
+
 
       // 2. 새 비밀번호로 변경
       const { error: updateError } = await supabase.auth.updateUser({
