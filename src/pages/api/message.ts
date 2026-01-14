@@ -1,108 +1,125 @@
-// pages/api/message.ts
+// src/pages/api/message.ts
+import type { NextApiRequest, NextApiResponse } from "next";
 
-export const config = {
-  runtime: 'edge',
-};
+const API_URL =
+  process.env.CLOSEAPI_URL ??
+  "https://closeapi.eduwill.net/bot/10608844/channel/81063172-71bb-7066-51ef-dd7cca1b7000/message";
 
-const API_URL = 'https://closeapi.eduwill.net/bot/10608844/channel/c534b478-b7d2-f558-cf25-8b8d715ca38f/message';
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "https://schedule-app-v3-kappa.vercel.app",
+];
 
-export default async function handler(req: Request) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
+// CORS: 허용 origin만 echo (origin 없으면 세팅 안 함)
+function setCors(req: NextApiRequest, res: NextApiResponse) {
+  const origin = (req.headers?.origin as string | undefined) ?? "";
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+}
 
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers });
+// 문자열 body 안전 파싱
+function safeJsonParse(input: any) {
+  if (typeof input !== "string") return input;
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
+  }
+}
+
+// ✅ 핵심: 어떤 형태로 와도 closeapi가 먹는 { text }로 정규화
+function normalizeToTextBody(body: any): { text: string } {
+  if (!body) return { text: "" };
+
+  // 이미 정답 형태
+  if (typeof body?.text === "string") return { text: body.text };
+
+  // 흔한 변형들
+  const c1 = body?.content;
+  if (typeof c1 === "string") return { text: c1 };
+  if (typeof c1?.text === "string") return { text: c1.text };
+
+  const m1 = body?.message;
+  if (typeof m1 === "string") return { text: m1 };
+  if (typeof m1?.text === "string") return { text: m1.text };
+
+  // fallback: content 키를 content로 보내는 경우도 있어서, 마지막으로 string化
+  if (typeof body === "string") return { text: body };
+
+  // 여기까지 오면 뭘 보낼지 애매 → 디버그를 위해 stringify
+  return { text: JSON.stringify(body) };
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  setCors(req, res);
+
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  if (req.method === "GET") {
+    return res.status(200).json({
+      ok: true,
+      status: "API is running",
+      upstream: API_URL,
+      allowedOrigins: ALLOWED_ORIGINS,
+      hint: "POST로 보내면 closeapi로 프록시합니다.",
+    });
   }
 
-  if (req.method === 'GET') {
-    return new Response(
-      JSON.stringify({ 
-        status: 'API is running',
-        message: 'Use POST method to send messages'
-      }), 
-      { status: 200, headers }
-    );
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, error: "Method not allowed" });
   }
 
-  if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Method not allowed' }), 
-      { status: 405, headers }
-    );
-  }
+  const rawBody = req.body;
+  const parsed = safeJsonParse(rawBody);
+  const normalized = normalizeToTextBody(parsed);
+
+  // 디버그 로그 (터미널)
+  console.log("📨 /api/message origin:", req.headers?.origin);
+  console.log("📨 /api/message content-type:", req.headers["content-type"]);
+  console.log("📨 /api/message rawBody:", rawBody);
+  console.log("📨 /api/message parsedBody:", parsed);
+  console.log("🧼 /api/message normalizedBody:", normalized);
+
+  // 타임아웃 10초
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    const body = await req.json();
-    console.log('📨 받은 요청 body:', body);
+    const upstream = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(normalized),
+      signal: controller.signal,
+    });
 
-    // 🔥 타임아웃 추가 (10초)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
+    const text = await upstream.text();
+    let upstreamBody: any = text;
     try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      upstreamBody = JSON.parse(text);
+    } catch {}
 
-      clearTimeout(timeoutId);
+    console.log("📮 closeapi status:", upstream.status);
+    console.log("📮 closeapi body:", upstreamBody);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('❌ closeapi 응답 실패:', response.status, errorText);
-        
-        // 403/401 → 화이트리스트 문제
-        if (response.status === 403 || response.status === 401) {
-          return new Response(
-            JSON.stringify({ 
-              error: 'Access denied by closeapi',
-              message: 'Cloudflare Pages 도메인을 closeapi 화이트리스트에 추가해야 합니다.',
-              details: errorText 
-            }), 
-            { status: response.status, headers }
-          );
-        }
+    return res.status(upstream.status).json({
+      ok: upstream.ok,
+      closeapi: { status: upstream.status, body: upstreamBody },
+      sent: normalized, // ✅ 내가 실제로 보낸 payload 확인용
+    });
+  } catch (e: any) {
+    const isTimeout = e?.name === "AbortError";
+    console.error("❌ /api/message error:", e);
 
-        return new Response(
-          JSON.stringify({ error: 'Failed to send message', details: errorText }), 
-          { status: response.status, headers }
-        );
-      }
-
-      const data = await response.json();
-      console.log('✅ 메시지 발송 성공:', data);
-
-      return new Response(JSON.stringify(data), { status: 200, headers });
-
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-      
-      // 타임아웃 에러
-      if (fetchError.name === 'AbortError') {
-        console.error('⏱️ closeapi 타임아웃 (10초 초과)');
-        return new Response(
-          JSON.stringify({ 
-            error: 'Request timeout',
-            message: 'closeapi 서버 응답 시간 초과 (화이트리스트 문제일 수 있음)'
-          }), 
-          { status: 504, headers }
-        );
-      }
-      
-      throw fetchError;
-    }
-
-  } catch (error: any) {
-    console.error('❌ 에러:', error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }), 
-      { status: 500, headers }
-    );
+    return res.status(isTimeout ? 504 : 500).json({
+      ok: false,
+      error: isTimeout ? "Upstream timeout (10s)" : e?.message || String(e),
+    });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

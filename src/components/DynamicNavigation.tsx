@@ -35,27 +35,8 @@ export default function DynamicNavigation() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // ✅ 전역 스타일 + 전역 클릭 핸들러 (1회 설정)
+  // ✅ 전역 클릭 핸들러만 (body padding 건드리지 않음)
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      const style = document.createElement('style');
-      style.id = 'nav-global-style';
-      style.textContent = `
-        body { 
-          padding-top: 70px !important; 
-          margin: 0; 
-        }
-        * {
-          box-sizing: border-box;
-        }
-      `;
-
-      const existingStyle = document.getElementById('nav-global-style');
-      if (existingStyle) existingStyle.remove();
-
-      document.head.appendChild(style);
-    }
-
     const handleGlobalClick = () => {
       setOpenMenu(null);
       setMobileMenuOpen(false);
@@ -66,6 +47,7 @@ export default function DynamicNavigation() {
       document.removeEventListener('click', handleGlobalClick);
     };
   }, []);
+
 
   // ✅ Auth + localStorage 에서 최종 역할 계산
   const resolvedUserRole: string | undefined = (() => {

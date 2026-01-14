@@ -1,162 +1,109 @@
 // src/utils/scheduleHistory.ts
 import { supabase } from "./supabaseClient";
 
-export type ScheduleChangeType =
-  | "created"
-  | "updated"
-  | "approved"
-  | "rejected"
-  | "cancelled"
-  | "status_changed";
+type AnyObj = Record<string, any>;
 
-export interface HistoryActor {
-  userId?: number | null;
-  userUuid?: string | null;
-  name?: string | null;
-  email?: string | null;
-  role?: string | null;
-  source?: "professor-page" | "admin-panel" | "studio-modal" | "system" | string;
-}
+export const normalizeChangeType = (t: string) => {
+  const v = String(t || "").trim();
 
-export interface ScheduleSnapshot {
-  id?: number;
-  shoot_date?: string | null;
-  start_time?: string | null;
-  end_time?: string | null;
-  professor_name?: string | null;
-  course_name?: string | null;
-  course_code?: string | null;
-  shooting_type?: string | null;
-  sub_location_id?: number | null;
-  approval_status?: string | null;
-  notes?: string | null;
-  schedule_group_id?: string | null;
-  is_split_schedule?: boolean | null;
-  break_time_enabled?: boolean | null;
-  break_start_time?: string | null;
-  break_end_time?: string | null;
-  break_duration_minutes?: number | null;
-  is_active?: boolean | null;
-}
+  // ✅ 과거/혼재된 키들까지 흡수
+  if (v === "cross_check_request") return "crosscheck_req";
+  if (v === "cross_check_confirm") return "crosscheck_ok";
+  if (v === "crosscheck_confirm") return "crosscheck_ok";
 
-export interface LogScheduleHistoryParams {
-  scheduleId: number;
-  changeType: ScheduleChangeType;
-  oldValues?: ScheduleSnapshot | null;
-  newValues?: ScheduleSnapshot | null;
-  reason?: string | null;
-  actor?: HistoryActor;
-}
+  return v;
+};
 
-export const buildSnapshotFromSchedule = (row: any): ScheduleSnapshot => ({
-  id: row.id,
-  shoot_date: row.shoot_date,
-  start_time: row.start_time,
-  end_time: row.end_time,
-  professor_name: row.professor_name,
-  course_name: row.course_name,
-  course_code: row.course_code,
-  shooting_type: row.shooting_type,
-  sub_location_id: row.sub_location_id,
-  approval_status: row.approval_status,
-  notes: row.notes,
-  schedule_group_id: row.schedule_group_id,
-  is_split_schedule: row.is_split_schedule,
-  break_time_enabled: row.break_time_enabled,
-  break_start_time: row.break_start_time,
-  break_end_time: row.break_end_time,
-  break_duration_minutes: row.break_duration_minutes,
-  is_active: row.is_active,
-});
+export const buildSnapshotFromSchedule = (s: AnyObj | null | undefined) => {
+  if (!s) return null;
 
-export const logScheduleHistory = async ({
-  scheduleId,
-  changeType,
-  oldValues = null,
-  newValues = null,
-  reason = null,
-  actor,
-}: LogScheduleHistoryParams) => {
-  try {
-    const payload: any = {
-      schedule_id: scheduleId,
-      change_type: changeType,
-      old_values: oldValues,
-      new_values: newValues,
-      reason: reason,
-      changed_by_user_id: actor?.userId ?? null,
-      changed_by_user_uuid: actor?.userUuid ?? null,
-      changed_by_name: actor?.name ?? null,
-      changed_by_email: actor?.email ?? null,
-      changed_by_role: actor?.role ?? null,
-      source: actor?.source ?? null,
-    };
+  // 너무 큰 객체(조인 포함) 들어오면 히스토리 저장이 지저분해지고 무거워짐 → 핵심만 스냅샷
+  return {
+    id: s.id ?? null,
+    schedule_type: s.schedule_type ?? null,
+    shoot_date: s.shoot_date ?? null,
+    start_time: s.start_time ?? null,
+    end_time: s.end_time ?? null,
+    professor_name: s.professor_name ?? null,
+    course_name: s.course_name ?? null,
+    course_code: s.course_code ?? null,
+    shooting_type: s.shooting_type ?? null,
+    sub_location_id: s.sub_location_id ?? null,
+    approval_status: s.approval_status ?? null,
+    tracking_status: s.tracking_status ?? null,
+    notes: s.notes ?? null,
+    is_active: s.is_active ?? null,
 
-    const { error } = await supabase.from("schedule_history").insert(payload);
-    if (error) {
-      console.error("[schedule_history] insert error:", error);
-    }
-  } catch (err) {
-    console.error("[schedule_history] logScheduleHistory exception:", err);
+    requested_by: s.requested_by ?? null,
+    approved_by: s.approved_by ?? null,
+
+    break_time_enabled: s.break_time_enabled ?? null,
+    break_start_time: s.break_start_time ?? null,
+    break_end_time: s.break_end_time ?? null,
+    break_duration_minutes: s.break_duration_minutes ?? null,
+
+    schedule_group_id: s.schedule_group_id ?? null,
+    is_split_schedule: s.is_split_schedule ?? null,
+  };
+};
+
+const recentKeys = new Map<string, number>();
+
+const cleanupKeys = () => {
+  const now = Date.now();
+  for (const [k, t] of recentKeys.entries()) {
+    if (now - t > 10_000) recentKeys.delete(k);
   }
 };
 
-/** 최초 생성용 헬퍼 */
-export const logScheduleCreated = async (row: any, actor?: HistoryActor) => {
-  if (!row?.id) return;
-  const snapshot = buildSnapshotFromSchedule(row);
-  return logScheduleHistory({
-    scheduleId: row.id,
-    changeType: "created",
-    oldValues: null,
-    newValues: snapshot,
-    actor,
-  });
+const buildDedupeKey = (p: AnyObj, bucketSec: number) => {
+  // schedule_id + change_type + bucket 으로만 dedupe (description/old/new까지 포함하면 너무 민감해져서 중복 방지 실패)
+  return `${p.scheduleId}|${normalizeChangeType(String(p.changeType))}|${bucketSec}`;
 };
 
-/** 일반 수정/직접수정용 헬퍼 */
-export const logScheduleUpdated = async (
-  oldRow: any,
-  newRow: any,
-  actor?: HistoryActor,
-  reason?: string
-) => {
-  if (!oldRow?.id) return;
-  return logScheduleHistory({
-    scheduleId: oldRow.id,
-    changeType: "updated",
-    oldValues: buildSnapshotFromSchedule(oldRow),
-    newValues: buildSnapshotFromSchedule(newRow),
-    actor,
-    reason,
-  });
-};
+export const logScheduleHistory = async (params: {
+  scheduleId: number;
+  changeType: string;
+  changedBy?: number | null; // ✅ changed_by (name 아님)
+  description?: string | null;
+  oldValue?: any;
+  newValue?: any;
+  dedupeWindowSec?: number;
+}) => {
+  const {
+    scheduleId,
+    changeType,
+    changedBy = null,
+    description = null,
+    oldValue = null,
+    newValue = null,
+    dedupeWindowSec = 2,
+  } = params;
 
-/** 상태 변경 전용 (승인/취소/요청 등) */
-export const logScheduleStatusChanged = async (
-  schedule: any,
-  fromStatus: string,
-  toStatus: string,
-  actor?: HistoryActor,
-  reason?: string
-) => {
-  if (!schedule?.id) return;
-  const snapshot = buildSnapshotFromSchedule({
-    ...schedule,
-    approval_status: toStatus,
-  });
+  if (!scheduleId) return;
 
-  return logScheduleHistory({
-    scheduleId: schedule.id,
-    changeType:
-      toStatus === "cancelled"
-        ? "cancelled"
-        : fromStatus === "pending" && toStatus === "approved"
-        ? "approved"
-        : "status_changed",
-    oldValues: { ...snapshot, approval_status: fromStatus },
-    newValues: snapshot,
-    actor,
-    reason,
-  });
+  const nowMs = Date.now();
+  const bucketSec = Math.floor(nowMs / 1000 / dedupeWindowSec) * dedupeWindowSec;
+  const dedupeKey = buildDedupeKey(
+    { scheduleId, changeType: normalizeChangeType(String(changeType)) },
+    bucketSec
+  );
+
+  const last = recentKeys.get(dedupeKey);
+  if (last && nowMs - last < dedupeWindowSec * 1000) return;
+
+  recentKeys.set(dedupeKey, nowMs);
+  cleanupKeys();
+
+  const payload: AnyObj = {
+    schedule_id: scheduleId,
+    change_type: normalizeChangeType(String(changeType)),
+    description: description ?? "",
+    changed_by: changedBy,
+    old_value: oldValue == null ? null : JSON.stringify(oldValue),
+    new_value: newValue == null ? null : JSON.stringify(newValue),
+  };
+
+  const { error } = await supabase.from("schedule_history").insert(payload);
+  if (error) console.error("[schedule_history] insert error:", error, payload);
 };

@@ -2,6 +2,7 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import { supabase } from "../utils/supabaseClient";
+import { logScheduleHistory, buildSnapshotFromSchedule } from "../utils/scheduleHistory";
 import { SchedulePolicy } from "../utils/schedulePolicy";
 import { ProfessorAutocomplete } from '../components/ProfessorAutocomplete';
 import axios from 'axios';
@@ -2325,6 +2326,8 @@ const handleApprovalRequest = async (reason: string) => {
 
     if (approvalRequestType === 'edit') {
       updateData.modification_reason = reason; // 수정사유 기록
+      // ✅ 수정요청 들어오면 tracking_status를 null로 리셋(재크로스체크 필요)
+      updateData.tracking_status = null;
     } else if (approvalRequestType === 'cancel') {
       updateData.cancellation_reason = reason; // ✅ 취소사유 기록 (누락 방지!)
       updateData.cancelled_by = managerInfo?.id; // ✅ 취소자 기록
@@ -2337,27 +2340,19 @@ const handleApprovalRequest = async (reason: string) => {
 
     if (error) throw error;
 
-    // ✅ schedule_history에도 반드시 기록
+    // ✅ schedule_history 기록(단일 유틸 사용 + 중복방지)
     for (const scheduleId of scheduleIds) {
-      await supabase.from('schedule_history').insert({
-        schedule_id: scheduleId,
-        change_type: approvalRequestType === 'edit' ? 'modification_requested' : 'cancellation_requested',
-        changed_by: managerInfo?.id,
-        old_value: JSON.stringify({ approval_status: approvalSchedule.approval_status }),
-        new_value: JSON.stringify({ approval_status: statusMap[approvalRequestType] }),
-        description: reason, // ✅ 사유 명확히!
-        change_details: {
-          reason: reason,
-          role: 'manager',
-          name: managerInfo?.name,
-          type: approvalRequestType
-        },
-        created_at: new Date().toISOString(),
-        changed_at: new Date().toISOString()
+      await logScheduleHistory({
+        scheduleId,
+        changeType: approvalRequestType === 'edit' ? 'modify_request' : 'cancel_request',
+        changedBy: managerInfo?.id ?? null,
+        changedByName: managerInfo?.name ?? '',
+        description: reason ?? '',
+        oldValue: { approval_status: approvalSchedule?.approval_status },
+        newValue: { approval_status: statusMap[approvalRequestType] },
       });
     }
-
-    // 메시지 생성 및 전송...
+// 메시지 생성 및 전송...
     const message = generateAdminMessage(approvalRequestType, approvalSchedule, managerInfo?.name, reason);
     
     if (message) {
@@ -2526,28 +2521,22 @@ const handleApprovalRequest = async (reason: string) => {
 
       if (error) throw error;
 
-      // 히스토리 기록
+      // ✅ 히스토리 기록(단일 유틸 사용 + 중복방지)
       if (createdSchedules && createdSchedules.length > 0) {
         for (const sched of createdSchedules) {
-          await supabase.from('schedule_history').insert({
-            schedule_id: sched.id,
-            change_type: 'created',
-            changed_by: managerInfo?.id,
-            old_value: null,
-            new_value: JSON.stringify(sched),
+          await logScheduleHistory({
+            scheduleId: sched.id,
+            changeType: 'created',
+            changedBy: managerInfo?.id ?? null,
+            changedByName: managerInfo?.name ?? '',
             description: '최초 스케줄 등록',
-            change_details: {
-              role: 'manager',
-              name: managerInfo?.name,
-              professor_category_id: sched.professor_category_id
-            },
-            created_at: new Date().toISOString(),
-            changed_at: new Date().toISOString()
+            oldValue: null,
+            newValue: buildSnapshotFromSchedule(sched),
           });
         }
       }
 
-      return {
+return {
         success: true,
         data: createdSchedules,
         message: `분할 스케줄이 등록되었습니다.\n1차: ${data.start_time} ~ ${data.break_start_time}\n휴식: ${data.break_start_time} ~ ${data.break_end_time}\n2차: ${data.break_end_time} ~ ${data.end_time}\n\n관리자 승인 후 최종 확정됩니다.`
@@ -2589,20 +2578,14 @@ const handleApprovalRequest = async (reason: string) => {
       // 히스토리 기록
       if (createdSchedule && createdSchedule.length > 0) {
         const newSchedule = createdSchedule[0];
-        await supabase.from('schedule_history').insert({
-          schedule_id: newSchedule.id,
-          change_type: 'created',
-          changed_by: managerInfo?.id,
-          old_value: null,
-          new_value: JSON.stringify(newSchedule),
+        await logScheduleHistory({
+          scheduleId: newSchedule.id,
+          changeType: 'created',
+          changedBy: managerInfo?.id,
+          changedByName: managerInfo?.name ?? '',
           description: '최초 스케줄 등록',
-          change_details: {
-            role: 'manager',
-            name: managerInfo?.name,
-            professor_category_id: newSchedule.professor_category_id
-          },
-          created_at: new Date().toISOString(),
-          changed_at: new Date().toISOString()
+          oldValue: null,
+          newValue: newSchedule,
         });
       }
 
@@ -2657,20 +2640,14 @@ const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
       
       // ✅ history 기록
       for (const scheduleId of scheduleIds) {
-        await supabase.from('schedule_history').insert({
-          schedule_id: scheduleId,
-          change_type: 'modification_approved',
-          changed_by: managerInfo?.id,
-          old_value: JSON.stringify(editingSchedule),
-          new_value: JSON.stringify(finalData),
+        await logScheduleHistory({
+          scheduleId: scheduleId,
+          changeType: 'modification_approved',
+          changedBy: managerInfo?.id,
+          changedByName: managerInfo?.name ?? '',
           description: reason,
-          change_details: {
-            reason: reason,
-            role: 'manager',
-            name: managerInfo?.name
-          },
-          created_at: new Date().toISOString(),
-          changed_at: new Date().toISOString()
+          oldValue: editingSchedule,
+          newValue: finalData,
         });
       }
     } else {
@@ -2682,21 +2659,15 @@ const handleEditScheduleSave = async (editedSchedule: any, reason: string) => {
       if (error) throw error;
       
       // ✅ history 기록
-      await supabase.from('schedule_history').insert({
-        schedule_id: editingSchedule.id,
-        change_type: 'modification_approved',
-        changed_by: managerInfo?.id,
-        old_value: JSON.stringify(editingSchedule),
-        new_value: JSON.stringify(finalData),
-        description: reason,
-        change_details: {
-          reason: reason,
-          role: 'manager',
-          name: managerInfo?.name
-        },
-        created_at: new Date().toISOString(),
-        changed_at: new Date().toISOString()
-      });
+      await logScheduleHistory({
+          scheduleId: editingSchedule.id,
+          changeType: 'modification_approved',
+          changedBy: managerInfo?.id,
+          changedByName: managerInfo?.name ?? '',
+          description: reason,
+          oldValue: editingSchedule,
+          newValue: finalData,
+        });
     }
 
     // 메시지 생성 및 전송...

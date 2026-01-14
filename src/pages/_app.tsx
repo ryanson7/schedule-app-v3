@@ -1,17 +1,17 @@
 // pages/_app.tsx (중복 실행 방지 버전)
-import type { AppProps } from 'next/app';
-import { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/router';
-import dynamic from 'next/dynamic';
-import type { Session } from '@supabase/supabase-js';
-import { WeekProvider } from '../contexts/WeekContext';
-import DynamicNavigation from '../components/DynamicNavigation';
-import { supabase } from '../utils/supabaseClient';
-import '../styles/globals.css';
+import type { AppProps } from "next/app";
+import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/router";
+import dynamic from "next/dynamic";
+import type { Session } from "@supabase/supabase-js";
+import { WeekProvider } from "../contexts/WeekContext";
+import DynamicNavigation from "../components/DynamicNavigation";
+import { supabase } from "../utils/supabaseClient";
+import "../styles/globals.css";
 
 // AuthProvider를 브라우저에서만 로드
 const AuthProviderNoSSR = dynamic(
-  () => import('../contexts/AuthContext').then(m => m.AuthProvider),
+  () => import("../contexts/AuthContext").then((m) => m.AuthProvider),
   { ssr: false }
 );
 
@@ -20,8 +20,7 @@ function MyApp({ Component, pageProps }: AppProps) {
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const [isClient, setIsClient] = useState(false);
-  
-  // 🔧 중복 실행 방지
+
   const initialized = useRef(false);
   const router = useRouter();
 
@@ -30,28 +29,26 @@ function MyApp({ Component, pageProps }: AppProps) {
   }, []);
 
   useEffect(() => {
-    // 🔧 한 번만 실행되도록
     if (!isClient || !router.isReady || initialized.current) return;
     initialized.current = true;
 
     const initializeApp = async () => {
       try {
-        // 🔧 로그 간소화
-        console.log('🔍 앱 초기화 시작');
-        
-        // Supabase 세션
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
+        console.log("🔍 앱 초기화 시작");
+
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
         if (error) {
-          console.error('세션 조회 오류:', error);
+          console.error("세션 조회 오류:", error);
         } else {
           setInitialSession(session);
-          // console.log('✅ 세션 설정:', session?.user?.email || '없음'); // 🔧 로그 줄임
         }
 
-        // 🔧 올바른 키 사용
-        const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-        const userRole = localStorage.getItem('userRole');
+        const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+        const userRole = localStorage.getItem("userRole");
         const currentPath = router.pathname;
 
         const safeReplace = (to: string) => {
@@ -61,144 +58,105 @@ function MyApp({ Component, pageProps }: AppProps) {
           }
         };
 
-        // 🔧 로그 간소화
-        // console.log('🔍 라우팅 체크:', { currentPath, isAuthenticated, userRole, hasSession: !!session });
-
-        // // 🔧 간단한 라우팅 처리
-        // if (currentPath === '/') {
-        //   if (isAuthenticated && userRole) {
-        //     switch (userRole) {
-        //       case 'system_admin':
-        //       case 'schedule_admin':
-        //       case 'systemadmin':
-        //         safeReplace('/admin');
-        //         break;
-        //       case 'academy_manager':
-        //         safeReplace('/academy-schedules');
-        //         break;
-        //       case 'studio_manager':
-        //         safeReplace('/studio-schedules');
-        //         break;
-        //       case 'shooter':
-        //         safeReplace('/shooter/ShooterDashboard');
-        //         break;
-        //       case 'professor':
-        //         safeReplace('/professor-categories');
-        //         break;
-        //       default:
-        //         safeReplace('/admin');
-        //     }
-        //   } else {
-        //     safeReplace('/login');
-        //   }
-        // } 
-        // // 로그인 페이지에서 이미 인증된 경우
-        // else if (currentPath === '/login') {
-        //   if (isAuthenticated && userRole) {
-        //     switch (userRole) {
-        //       case 'system_admin':
-        //       case 'schedule_admin':
-        //       case 'systemadmin':
-        //         safeReplace('/admin');
-        //         break;
-        //       case 'academy_manager':
-        //         safeReplace('/academy-schedules');
-        //         break;
-        //       case 'studio_manager':
-        //         safeReplace('/studio-schedules');
-        //         break;
-        //       case 'shooter':
-        //         safeReplace('/shooter/ShooterDashboard');
-        //         break;
-        //       case 'professor':
-        //         safeReplace('/professor-categories');
-        //         break;
-        //       default:
-        //         safeReplace('/admin');
-        //     }
-        //   }
-        // }
-        // 보호 페이지 접근 제어
         if (
-          currentPath !== '/login' && 
-          currentPath !== '/auth/first-login' && 
+          currentPath !== "/login" &&
+          currentPath !== "/auth/first-login" &&
           (!isAuthenticated || !userRole)
         ) {
-          console.warn('❌ 인증되지 않은 접근:', currentPath);
-          safeReplace('/login');
-        } else {
-          // console.log('✅ 페이지 접근 허용:', currentPath); // 🔧 로그 줄임
+          console.warn("❌ 인증되지 않은 접근:", currentPath);
+          safeReplace("/login");
         }
-
       } catch (e) {
-        console.error('앱 초기화 예외:', e);
+        console.error("앱 초기화 예외:", e);
       } finally {
         setLoading(false);
         setAuthChecked(true);
-        console.log('✅ 앱 초기화 완료');
+        console.log("✅ 앱 초기화 완료");
       }
     };
 
     initializeApp();
-  }, [isClient, router.isReady]); // 🔧 router.pathname 제거
-  
+  }, [isClient, router.isReady]);
 
-  // 로그아웃 이벤트 리스너 강화
   useEffect(() => {
     if (!isClient) return;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔄 인증 상태 변경:', event);
-        
-        if (event === 'SIGNED_OUT') {
-          console.log('🚪 로그아웃 감지 - 완전 클리어');
-          
-          // 🔧 강제 클리어
-          localStorage.clear();
-          sessionStorage.clear();
-          
-          // 🔧 상태 리셋
-          initialized.current = false;
-          setAuthChecked(false);
-          setInitialSession(null);
-          
-          // 🔧 즉시 /login으로 강제 이동
-          if (window.location.pathname !== '/login') {
-            window.location.replace('/login'); // replace 사용
-          }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event) => {
+      console.log("🔄 인증 상태 변경:", event);
+
+      if (event === "SIGNED_OUT") {
+        console.log("🚪 로그아웃 감지 - 완전 클리어");
+
+        localStorage.clear();
+        sessionStorage.clear();
+
+        initialized.current = false;
+        setAuthChecked(false);
+        setInitialSession(null);
+
+        if (window.location.pathname !== "/login") {
+          window.location.replace("/login");
         }
       }
-    );
+    });
 
     return () => subscription.unsubscribe();
   }, [isClient]);
 
+  useEffect(() => {
+    if (!isClient || !router.isReady) return;
+
+    const path = router.pathname;
+
+    // ✅ body 스크롤을 잠글 페이지(=내부 컨테이너 스크롤 사용하는 페이지)만 true
+    const lockBodyScroll =
+      path.startsWith("/all-schedules") ||
+      path.startsWith("/academy-schedules") ||
+      path.startsWith("/studio-admin") ||
+      path.startsWith("/internal-schedules");
 
 
-  const excludeNavPages = ['/login', '/register', '/auth/first-login'];
-  const showNavigation = isClient && !excludeNavPages.includes(router.pathname) && authChecked && !loading;
+    // ✅ 일반 페이지는 window 스크롤 살아야 함
+    document.body.style.overflow = lockBodyScroll ? "hidden" : "auto";
+
+    return () => {
+      // ✅ 라우트 이동/언마운트 시 안전 복구
+      document.body.style.overflow = "auto";
+    };
+  }, [isClient, router.isReady, router.pathname]);
+
+
+
+  const excludeNavPages = ["/login", "/register", "/auth/first-login"];
+  const showNavigation =
+    isClient && !excludeNavPages.includes(router.pathname) && authChecked && !loading;
 
   if (!isClient || loading || !authChecked) {
     return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        flexDirection: 'column',
-        gap: 16,
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      }}>
-        <div style={{
-          width: 50,
-          height: 50,
-          border: '5px solid rgba(255,255,255,0.3)',
-          borderTop: '5px solid white',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-        }} />
-        <p style={{ color: 'white', fontSize: 16, fontWeight: 500, textAlign: 'center' }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          flexDirection: "column",
+          gap: 16,
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        }}
+      >
+        <div
+          style={{
+            width: 50,
+            height: 50,
+            border: "5px solid rgba(255,255,255,0.3)",
+            borderTop: "5px solid white",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+          }}
+        />
+        <p style={{ color: "white", fontSize: 16, fontWeight: 500, textAlign: "center" }}>
           앱을 준비하는 중...
         </p>
         <style jsx>{`
@@ -215,7 +173,17 @@ function MyApp({ Component, pageProps }: AppProps) {
     <AuthProviderNoSSR initialSession={initialSession}>
       <WeekProvider>
         {showNavigation && <DynamicNavigation />}
-        <Component {...pageProps} />
+
+        {/* ✅ 핵심: 네비(고정 70px) 아래로 컨텐츠 밀기
+            - body 전역 padding이 아니라 "앱 컨텐츠"에만 적용
+            - 스크롤 이중화 다시 안 생김 */}
+        <div
+          style={{
+            paddingTop: showNavigation ? 70 : 0,
+          }}
+        >
+          <Component {...pageProps} />
+        </div>
       </WeekProvider>
     </AuthProviderNoSSR>
   );

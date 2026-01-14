@@ -9,11 +9,14 @@
   padding: 0;
 }
 
+/* ✅ 전역 스크롤 복구: height 고정 금지 (min-height 사용) */
 html,
 body {
-  height: 100vh !important;
+  height: 100%;
+  min-height: 100vh;
   max-width: 100vw;
   overflow-x: hidden;
+  overflow-y: auto;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
@@ -21,12 +24,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 🔥 Next.js 루트 컨테이너 높이 설정 */
+/* ✅ Next.js 루트도 고정 height 제거 */
 #__next {
-  height: 100vh !important;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
+
 
 /* 모바일 터치 영역 최적화 */
 @media (max-width: 767px) {

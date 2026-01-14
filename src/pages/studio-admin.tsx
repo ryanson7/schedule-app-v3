@@ -1,26 +1,42 @@
 // src/pages/studio-admin.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
 import { useAuth } from "../contexts/AuthContext";
 import StudioAdminPanel from "../components/StudioAdminPanel";
 import { safeUserRole } from "../utils/permissions";
 import type { UserRoleType } from "../types/users";
 
 export default function StudioAdminPage() {
+  const router = useRouter();
   const { user, loading } = useAuth();
 
   const [hasAccess, setHasAccess] = useState(false);
   const [checked, setChecked] = useState(false);
 
-  // ✅ 페이지 접근 허용 역할 (문구에 맞춰서)
+  // ✅ index 승인대기에서 넘어오는 딥링크 파라미터
+  const deepLinkScheduleId = useMemo(() => {
+    const q = router.query?.scheduleId;
+    const v = q ? Number(Array.isArray(q) ? q[0] : q) : NaN;
+    return Number.isFinite(v) ? v : null;
+  }, [router.query]);
+
+  const deepLinkDate = useMemo(() => {
+    const q = router.query?.date;
+    const v = q ? String(Array.isArray(q) ? q[0] : q) : "";
+    // 형식은 패널에서 최종 검증 (YYYY-MM-DD)
+    return v || null;
+  }, [router.query]);
+
+  // ✅ 페이지 접근 허용 역할
   const allowedRoles: UserRoleType[] = [
     "system_admin",
     "schedule_admin",
     "manager",
     "academy_manager",
     "online_manager",
-    // "studio_manager" // 만약 따로 쓰면 여기 추가
+    // "studio_manager",
   ];
 
   useEffect(() => {
@@ -33,7 +49,7 @@ export default function StudioAdminPage() {
       rawRole = localStorage.getItem("userRole");
     }
 
-    // ✅ localStorage에 없으면 Supabase user.role 사용 (authenticated 등)
+    // ✅ localStorage에 없으면 Auth user.role 사용
     if (!rawRole) {
       rawRole = (user as any)?.role ?? null;
     }
@@ -44,16 +60,13 @@ export default function StudioAdminPage() {
       rawRole,
       appRole,
       allowedRoles,
+      deepLinkScheduleId,
+      deepLinkDate,
     });
 
-    if (appRole && allowedRoles.includes(appRole as UserRoleType)) {
-      setHasAccess(true);
-    } else {
-      setHasAccess(false);
-    }
-
+    setHasAccess(!!appRole && allowedRoles.includes(appRole as UserRoleType));
     setChecked(true);
-  }, [loading, user]);
+  }, [loading, user, deepLinkScheduleId, deepLinkDate]);
 
   // 🔄 AuthContext / role 체크 중
   if (loading || !checked) {
@@ -162,12 +175,14 @@ export default function StudioAdminPage() {
         authUserId: user?.id ?? null,
         name: (user as any)?.name ?? user?.email ?? "",
         role:
-          (typeof window !== "undefined" &&
-            localStorage.getItem("userRole")) ||
+          (typeof window !== "undefined" && localStorage.getItem("userRole")) ||
           (user as any)?.role ||
           null,
         permissions: (user as any)?.permissions ?? [],
       }}
+      // ✅ index에서 넘어오는 값 전달 (패널에서 주간 이동/모달 오픈 처리)
+      deepLinkScheduleId={deepLinkScheduleId}
+      deepLinkDate={deepLinkDate}
     />
   );
 }

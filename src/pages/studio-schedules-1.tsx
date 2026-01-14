@@ -2,7 +2,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "../utils/supabaseClient";
-import { logScheduleHistory, buildSnapshotFromSchedule } from "../utils/scheduleHistory";
 import { SchedulePolicy } from "../utils/schedulePolicy";
 import { useAuth } from '../contexts/AuthContext';
 
@@ -1894,31 +1893,49 @@ const submitShootingRequest = async () => {
     const result = await createScheduleGroup(scheduleData);
     console.log('✅ 스케줄 생성 결과:', result);
 
-    // 5. schedule_history 저장 (✅ 실제 DB 스키마에 맞춤)
-    // submitShootingRequest 함수 내부
+    // 5. schedule_history 저장 (✅ 실제 DB 스키마: old_value / new_value / changed_by / description)
+    // ⚠️ 여기에서 cancelReason(취소 사유)를 참조하면 교수 등록 시 ReferenceError가 발생함.
+    // 신규 등록은 "created"로 기록하고, new_value에 생성된 스케줄 스냅샷만 저장.
     if (result.success && result.schedules) {
       const createdByRole = localStorage.getItem('userRole');
       const isAdminCreated = ['schedule_admin', 'system_admin', 'studio_admin'].includes(createdByRole || '');
-      
+      const now = new Date().toISOString();
+
       for (const schedule of result.schedules) {
         const newValueObj = {
+          id: schedule.id,
           shoot_date: schedule.shoot_date,
           start_time: schedule.start_time,
           end_time: schedule.end_time,
           shooting_type: schedule.shooting_type,
           professor_name: schedule.professor_name,
           course_name: schedule.course_name || null,
+          course_code: schedule.course_code || null,
+          approval_status: schedule.approval_status || 'pending',
+          notes: schedule.notes || null,
+          schedule_group_id: schedule.schedule_group_id || null,
+          sub_location_id: schedule.sub_location_id || null,
+          is_split_schedule: schedule.is_split_schedule ?? null,
+          break_time_enabled: schedule.break_time_enabled ?? null,
+          break_start_time: schedule.break_start_time || null,
+          break_end_time: schedule.break_end_time || null,
+          break_duration_minutes: schedule.break_duration_minutes ?? null,
+          is_active: schedule.is_active ?? null,
         };
 
-        await logScheduleHistory({
-          scheduleId: schedule.id,
-          changeType: 'cancel_request',
-          changedBy: userInfo.id,
-          changedByName: userInfo.name,
-          description: cancelReason,
-          oldValue: buildSnapshotFromSchedule(schedule),
-          newValue: { ...buildSnapshotFromSchedule(schedule), approval_status: 'cancelled' },
-        });}
+        const { error: historyError } = await supabase.from('schedule_history').insert({
+          schedule_id: schedule.id,
+          change_type: 'created',
+          changed_by: userInfo.id,
+          description: isAdminCreated ? '관리자 등록' : '교수 촬영 신청',
+          old_value: null,
+          new_value: JSON.stringify(newValueObj),
+          created_at: now,
+          changed_at: now,
+        });
+
+        if (historyError) console.error('❌ History 저장 실패:', historyError);
+      }
     }
 
 

@@ -1,3 +1,4 @@
+//src/pages\admin\members\managers.tsx
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../../../utils/supabaseClient';
@@ -114,20 +115,22 @@ export default function ManagersManagementPage() {
     setLoading(false);
   };
 
-  // ✅ 정식 JOIN 쿼리로 수정된 loadManagers 함수
+  // ✅ 정식 JOIN 쿼리 (role=manager + manager_type 기준으로 필터)
   const loadManagers = async () => {
     try {
       console.log('📋 매니저 데이터 로딩 시작...');
 
+      // users.role = 'manager' 이고,
+      // managers.manager_type 이 academy_manager / online_manager 인 사람만 조회
       const { data: managersData, error } = await supabase
         .from('users')
         .select(`
-          id, 
-          name, 
-          email, 
-          phone, 
+          id,
+          name,
+          email,
+          phone,
           role,
-          status, 
+          status,
           is_active,
           created_at,
           managers!managers_user_id_fkey!inner (
@@ -135,17 +138,21 @@ export default function ManagersManagementPage() {
             main_location_id,
             position_id,
             main_locations:main_location_id (
-              id, 
+              id,
               name,
               location_type
             ),
             positions:position_id (
-              id, 
+              id,
               position_name
             )
           )
         `)
-        .in('role', ['academy_manager', 'online_manager'])
+        .eq('role', 'manager')              // 🔹 users.role 은 manager 고정
+        .in('managers.manager_type', [      // 🔹 managers.manager_type 으로 academy/online만 필터
+          'academy_manager',
+          'online_manager',
+        ])
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -154,22 +161,22 @@ export default function ManagersManagementPage() {
         console.error('에러 코드:', error.code);
         console.error('에러 메시지:', error.message);
         console.error('에러 세부사항:', error.details);
-        
-        // fallback 로직 - 기본 사용자 정보만 조회
+
+        // fallback: 그래도 최소한 users 정보는 보여주기
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('users')
           .select('id, name, email, phone, role, status, is_active, created_at')
-        .in('role', ['academy_manager', 'online_manager'])
+          .eq('role', 'manager')
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 
         if (!fallbackError && fallbackData) {
-          const simpleData = fallbackData.map(user => ({
+          const simpleData = fallbackData.map((user) => ({
             ...user,
             manager_type: 'online_manager' as const,
             location_name: '미설정',
             location_type: '',
-            position_name: '미설정'
+            position_name: '미설정',
           }));
           setManagers(simpleData);
         } else {
@@ -180,16 +187,15 @@ export default function ManagersManagementPage() {
 
       console.log('✅ JOIN 쿼리 성공! 받은 데이터:', managersData);
 
-      const enrichedData = (managersData || []).map(user => {
-      
-      const managerInfo = user.managers;
-        
+      const enrichedData = (managersData || []).map((user: any) => {
+        const managerInfo = user.managers;
+
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           phone: user.phone,
-          role: user.role,
+          role: user.role, // 항상 'manager'
           manager_type: managerInfo?.manager_type || 'online_manager',
           status: user.status,
           is_active: user.is_active,
@@ -198,31 +204,33 @@ export default function ManagersManagementPage() {
           position_id: managerInfo?.position_id,
           location_name: managerInfo?.main_locations?.name || '미설정',
           location_type: managerInfo?.main_locations?.location_type || '',
-          position_name: managerInfo?.positions?.position_name || '미설정'
+          position_name: managerInfo?.positions?.position_name || '미설정',
         };
       });
 
+      // 정렬: 학원 매니저 우선 → 지점 → 직책 → 생성일
       enrichedData.sort((a, b) => {
         if (a.manager_type !== b.manager_type) {
           return a.manager_type === 'academy_manager' ? -1 : 1;
         }
-        
+
         if (a.manager_type === 'academy_manager') {
           const locIdA = a.main_location_id || 999999;
           const locIdB = b.main_location_id || 999999;
           if (locIdA !== locIdB) return locIdA - locIdB;
         }
-        
+
         const posIdA = a.position_id || 999999;
         const posIdB = b.position_id || 999999;
         if (posIdA !== posIdB) return posIdA - posIdB;
-        
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
       });
 
       console.log('✅ 매니저 데이터 조합 완료:', enrichedData.length, '명');
       setManagers(enrichedData);
-
     } catch (error) {
       console.error('❌ 매니저 데이터 로딩 실패:', error);
       setManagers([]);
